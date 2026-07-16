@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import platform
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+BOARD_FILE = ROOT / "boards" / "cheeko-gotchi" / "board.json"
+MANIFEST_SCHEMA = ROOT / "schemas" / "cheekoai-app-manifest.schema.json"
+
+
+def find_ports():
+    patterns = [
+        "/dev/cu.usbmodem*",
+        "/dev/ttyACM*",
+        "/dev/ttyUSB*",
+        "/dev/cu.SLAB_USBtoUART*",
+    ]
+    ports = []
+    for pattern in patterns:
+        ports.extend(str(path) for path in Path("/").glob(pattern.lstrip("/")))
+    return sorted(set(ports))
+
+
+def command_exists(name):
+    return shutil.which(name) is not None
+
+
+def idf_status():
+    if command_exists("idf.py"):
+        return "ok"
+    known_exports = [
+        Path.home() / "esp" / "v5.5.2" / "esp-idf" / "export.sh",
+        Path.home() / "esp" / "esp-idf" / "export.sh",
+    ]
+    for export in known_exports:
+        if export.exists():
+            return f"available at {export}"
+    return "not found"
+
+
+def print_doctor(args):
+    print("Cheeko Doctor")
+    print(f"Host: {platform.system()} {platform.machine()}")
+    print(f"Python: {sys.version.split()[0]}")
+    print(f"SDK root: {ROOT}")
+    print(f"Board metadata: {'ok' if BOARD_FILE.exists() else 'missing'}")
+    print(f"git: {'ok' if command_exists('git') else 'missing'}")
+    print(f"ESP-IDF: {idf_status()}")
+    print(f"arduino-cli: {'ok' if command_exists('arduino-cli') else 'optional/missing'}")
+    ports = find_ports()
+    print(f"Device port: {ports[0] if ports else 'not found'}")
+    print(f"OPENAI_API_KEY: {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
+    print()
+    if not ports:
+        print("Plug in Cheeko Gotchi with a data USB-C cable, then run ./tools/cheeko ports")
+    if not command_exists("idf.py"):
+        print("ESP-IDF is not on PATH. Try: source ~/esp/v5.5.2/esp-idf/export.sh")
+
+
+def print_ports(args):
+    ports = find_ports()
+    if ports:
+        for port in ports:
+            print(port)
+    else:
+        print("No USB serial ports found")
+
+
+def print_board(args):
+    with BOARD_FILE.open() as f:
+        board = json.load(f)
+    print(json.dumps(board, indent=2))
+
+
+def print_self_test(args):
+    print("Cheeko Gotchi Self-Test")
+    print("1. Display: red, green, blue, yellow, white color bars")
+    print("2. Touch: tap and swipe coordinates")
+    print("3. Speaker: short tone plays")
+    print("4. Mic: level meter reacts to tapping")
+    print("5. Wi-Fi: scan nearby networks")
+    print()
+    print("Current runnable options:")
+    print("- Read examples/self_test/README.md")
+
+
+def print_product(args):
+    print("Cheekoai Product Contract")
+    print(f"Architecture: {ROOT / 'docs' / 'product' / 'architecture.md'}")
+    print(f"Deployment flow: {ROOT / 'docs' / 'product' / 'deployment-flow.md'}")
+    print(f"Manifest docs: {ROOT / 'docs' / 'product' / 'app-package-manifest.md'}")
+    print(f"Manifest schema: {MANIFEST_SCHEMA}")
+    print()
+    print("MVP path:")
+    print("1. Base firmware with pairing code, Wi-Fi provisioning, heartbeat, OTA")
+    print("2. Signed one-app-at-a-time package install")
+    print("3. Mobile/cloud builder that starts from safe templates")
+    print("4. Marketplace after install safety and rollback are proven")
+
+
+def print_manifest(args):
+    manifest = {
+        "schema": "ai.cheeko.app.v1",
+        "app_id": f"com.cheeko.{args.name.replace('-', '_')}",
+        "name": args.name.replace("_", " ").replace("-", " ").title(),
+        "version": "0.1.0",
+        "sdk": {"min": "0.1.0", "max": "0.x"},
+        "boards": ["cheeko-gotchi"],
+        "entrypoint": "CreateCheekoApp",
+        "permissions": ["display", "touch", "wifi", "cloud.fetch"],
+        "artifacts": [],
+        "rollback": {"keep_previous": True, "healthcheck_seconds": 15},
+    }
+    print(json.dumps(manifest, indent=2))
+
+
+def run_demo(args):
+    script = ROOT / "demo" / "run-local-loop.js"
+    subprocess.run(["node", str(script)], check=True, cwd=ROOT)
+
+
+def new_app(args):
+    app_dir = ROOT / "apps" / args.name
+    src_dir = app_dir / "src"
+    src_dir.mkdir(parents=True, exist_ok=False)
+    (app_dir / "README.md").write_text(
+        f"# {args.name}\n\nCheeko Gotchi SDK app.\n", encoding="utf-8"
+    )
+    (src_dir / "app.cc").write_text(
+        '#include "cheeko.h"\n\n'
+        "using namespace cheeko;\n\n"
+        f"class {args.class_name} : public CheekoApp {{\n"
+        " public:\n"
+        "  void OnStart() override {\n"
+        '    Cheeko().display().CenterText(80, "Hello Cheeko");\n'
+        "  }\n"
+        "};\n\n"
+        f"CHEEKO_APP({args.class_name});\n",
+        encoding="utf-8",
+    )
+    print(f"Created {app_dir}")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="cheeko")
+    sub = parser.add_subparsers(required=True)
+
+    doctor = sub.add_parser("doctor")
+    doctor.set_defaults(func=print_doctor)
+
+    ports = sub.add_parser("ports")
+    ports.set_defaults(func=print_ports)
+
+    board = sub.add_parser("board")
+    board.set_defaults(func=print_board)
+
+    self_test = sub.add_parser("self-test")
+    self_test.set_defaults(func=print_self_test)
+
+    product = sub.add_parser("product")
+    product.set_defaults(func=print_product)
+
+    manifest = sub.add_parser("manifest")
+    manifest.add_argument("name")
+    manifest.set_defaults(func=print_manifest)
+
+    demo = sub.add_parser("demo-loop")
+    demo.set_defaults(func=run_demo)
+
+    new = sub.add_parser("new")
+    new.add_argument("name")
+    new.add_argument("--class-name", default="MyCheekoApp")
+    new.set_defaults(func=new_app)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

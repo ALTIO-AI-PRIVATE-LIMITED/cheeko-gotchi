@@ -1,0 +1,29 @@
+# --- Build output (regenerable) ---
+build/
+build-*/
+.pio/
+dist/
+managed_components/
+node_modules/
+sdkconfig
+sdkconfig.old
+
+# --- ESP-IDF debug artifacts (large, regenerable) ---
+*.elf
+*.map
+*.o
+*.a
+
+# --- OS / editor junk ---
+.DS_Store
+*.swp
+*~
+
+# --- Local tooling / generated output ---
+.claude/
+output/
+demo/out/
+
+# --- Python ---
+__pycache__/
+*.pyc
