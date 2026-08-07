@@ -71,7 +71,7 @@ class SelfTestApp : public CheekoApp {
       sum += s * s;
     }
     const double rms = std::sqrt(sum / frame.sample_count);
-    mic_percent_ = std::clamp(static_cast<int>(rms * 400.0), 0, 100);
+    mic_percent_ = std::min(std::max(static_cast<int>(rms * 400.0), 0), 100);
   }
 
  private:
@@ -173,7 +173,7 @@ class SelfTestApp : public CheekoApp {
     // Level bar.
     const int bx = 30, by = 140, bw = kScreenW - 60, bh = 26;
     d.Rect(bx, by, bw, bh, Color::White);
-    const int fill = std::clamp(percent, 0, 100) * (bw - 4) / 100;
+    const int fill = std::min(std::max(percent, 0), 100) * (bw - 4) / 100;
     d.FillRect(bx + 2, by + 2, fill, bh - 4, Color::Cyan);
     d.CenterText(196, std::to_string(percent) + "%");
     d.CenterText(258, "tap to skip");

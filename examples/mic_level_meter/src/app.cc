@@ -24,7 +24,7 @@ class MicLevelMeterApp : public CheekoApp {
       sum += sample * sample;
     }
     const double rms = std::sqrt(sum / frame.sample_count);
-    const int percent = std::clamp(static_cast<int>(rms * 400.0), 0, 100);
+    const int percent = std::min(std::max(static_cast<int>(rms * 400.0), 0), 100);
     Cheeko().display().CenterText(92, std::to_string(percent) + "%");
   }
 };

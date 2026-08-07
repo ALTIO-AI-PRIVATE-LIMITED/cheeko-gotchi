@@ -24,6 +24,21 @@ to become a real app after one weekend of iteration.
 6. `examples/cloud_voice_bot`
    Learn push-to-talk cloud voice sessions using the microphone path.
 
+7. `examples/fridge_magnet`
+   Learn storage-backed lists, touch hit-testing, and glanceable home widgets.
+
+8. `examples/claude_agent`
+   Learn the cloud text round-trip, word-wrapped reply layout, and button
+   scrolling.
+
+9. `examples/tilt_maze`
+   Learn accelerometer tilt physics and partial redraws that stay fast on real
+   hardware.
+
+10. `examples/cheeko_pet`
+    Learn the full pet pattern: persistent stats, uptime-driven decay, and
+    mood-driven faces.
+
 ## Recommended Pattern
 
 Keep each app focused:
