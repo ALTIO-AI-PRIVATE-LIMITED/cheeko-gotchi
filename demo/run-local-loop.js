@@ -93,6 +93,26 @@ async function run() {
     });
     log.push({ step: "device claims owner pairing", result: claimed });
 
+    let replayError = null;
+    try {
+      await request("POST", `/devices/${deviceId}/claim`, {
+        ownerId,
+        pairingSessionId: pairing.pairingSessionId,
+        serial,
+        hardwareModel: "cheeko-gotchi",
+        pairingCode: "000000",
+      });
+    } catch (error) {
+      replayError = error;
+    }
+    if (!replayError || !replayError.message.includes("-> 403")) {
+      throw new Error("second claim with wrong pairing code was not rejected with 403");
+    }
+    log.push({
+      step: "pairing replay rejected",
+      result: { rejectedWith: 403, message: replayError.message },
+    });
+
     const job = await request("POST", "/apps/generation-jobs", {
       ownerId,
       deviceId,

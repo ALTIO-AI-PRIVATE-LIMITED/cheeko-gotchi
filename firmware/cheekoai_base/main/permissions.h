@@ -22,10 +22,27 @@ struct AppIdentity {
   std::string publisher;
 };
 
+// Maps a fine-grained manifest permission name (see
+// schemas/cheekoai-app-manifest.schema.json) onto the coarse firmware
+// capability flag that enforces it. Returns false for unknown names and
+// leaves *out untouched. Several manifest names collapse onto one flag:
+// - "buttons" -> kTouch: the board has no discrete buttons; button-style
+//   input is served by touch zones, so both ride the touch capability.
+// - "notifications" -> kCloud: notifications are pushed through the cloud
+//   connection; there is no local notification surface, so the grant that
+//   matters is cloud access.
+bool PermissionFromString(const std::string& name, Permission* out);
+
 class PermissionStore {
  public:
   void Grant(const AppIdentity& app, Permission permission);
   bool Allows(const AppIdentity& app, Permission permission) const;
+
+  // Grants every recognized manifest permission name to the app and returns
+  // how many names were granted. Unknown names are skipped, not errors, so a
+  // newer manifest schema does not brick older firmware.
+  int GrantFromManifest(const AppIdentity& app,
+                        const std::vector<std::string>& names);
 
  private:
   struct GrantRecord {

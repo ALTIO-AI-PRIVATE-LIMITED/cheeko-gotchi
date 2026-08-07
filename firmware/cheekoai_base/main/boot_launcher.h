@@ -25,6 +25,9 @@ class BootLauncher {
   void Start();
   BootMode SelectBootMode() const;
 
+  // Mode chosen by the most recent Start(). Valid after Start() returns.
+  BootMode mode() const { return mode_; }
+
  private:
   DisplayService& display_;
   WifiProvisioning& wifi_;
@@ -32,6 +35,7 @@ class BootLauncher {
   OtaManager& ota_;
   PairingCode& pairing_;
   AppRuntime& runtime_;
+  BootMode mode_ = BootMode::kSetup;
 };
 
 }  // namespace cheekoai

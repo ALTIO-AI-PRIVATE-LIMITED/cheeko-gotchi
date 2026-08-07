@@ -7,6 +7,7 @@ idf_component_register(
     "ota_manager.cc"
     "pairing_code.cc"
     "permissions.cc"
+    "platform.cc"
     "wifi_provisioning.cc"
     "services/audio_service.cc"
     "services/cloud_service.cc"

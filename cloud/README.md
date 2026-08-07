@@ -7,6 +7,14 @@ paired Cheeko Gotchi device over Wi-Fi OTA, BLE relay, or USB relay.
 This folder is a scaffold only. It defines the first API surface, job model, and
 security posture without depending on the firmware or SDK internals.
 
+## Development Simulator Notice
+
+`src/server.js` is an in-memory development simulator, not a real backend. All
+state (pairing sessions, devices, apps, artifacts, deployments) lives in the
+Node process and is lost on restart, and the `dev-signature` values it produces
+are placeholders with no cryptographic meaning. Use it only for local demos and
+contract exploration.
+
 ## User Flow
 
 1. The mobile app signs in the owner.

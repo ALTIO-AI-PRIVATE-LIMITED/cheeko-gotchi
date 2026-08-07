@@ -47,8 +47,11 @@ idf.py -p /dev/tty.usbmodemXXXX flash monitor
 This scaffold also supports a local syntax pass without ESP-IDF:
 
 ```bash
-g++ -std=c++17 -fsyntax-only main/*.cc main/services/*.cc -Imain
+g++ -std=c++14 -fsyntax-only main/*.cc main/services/*.cc -Imain
 ```
+
+C++14 is used here so the syntax pass also works on older MinGW toolchains
+(g++ 6.x); the ESP-IDF build itself may target a newer standard.
 
 ## Integration Contract
 

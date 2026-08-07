@@ -1,5 +1,10 @@
 "use strict";
 
+// NOTE: This is an in-memory development simulator for the Cheeko cloud API.
+// All state lives in this Node process and is lost on restart, and the
+// "dev-signature" values are placeholders, not cryptographic signatures.
+// It exists for local demos and contract exploration, not production use.
+
 const http = require("node:http");
 const { createHash, randomUUID } = require("node:crypto");
 const {
@@ -123,6 +128,22 @@ function createPairingSession(body) {
 }
 
 function claimDevice(deviceId, body) {
+  const session = state.pairingSessions.get(body.pairingSessionId);
+  if (!session) {
+    return json(403, { error: "pairing_invalid", reason: "session_not_found" });
+  }
+  if (new Date(session.expiresAt).getTime() < Date.now()) {
+    return json(403, { error: "pairing_invalid", reason: "session_expired" });
+  }
+  if (session.status !== "pending") {
+    return json(403, { error: "pairing_invalid", reason: "session_already_used" });
+  }
+  if (body.pairingCode !== session.pairingCode) {
+    return json(403, { error: "pairing_invalid", reason: "pairing_code_mismatch" });
+  }
+
+  session.status = "claimed";
+
   const device = {
     deviceId,
     ownerId: body.ownerId,
@@ -208,9 +229,27 @@ function getArtifact(appId, artifactId) {
 
   return json(200, {
     ...artifact,
-    downloadUrl: `https://storage.cheekoai.example/${artifactId}?token=short-lived`,
+    downloadUrl: `/v1/apps/${appId}/artifacts/${artifactId}/download`,
     expiresAt: minutesFromNow(15),
   });
+}
+
+function downloadArtifact(appId, artifactId) {
+  const artifact = state.artifacts.get(artifactId);
+  if (!artifact || artifact.appId !== appId) {
+    return json(404, { error: "artifact_not_found" });
+  }
+
+  // The generated source doubles as the mock's "package bytes".
+  return {
+    statusCode: 200,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+      "x-cheeko-digest": artifact.packageDigest,
+    },
+    body: artifact.sourcePreview,
+  };
 }
 
 function createDeployment(deviceId, body) {
@@ -280,6 +319,23 @@ function submitMarketplaceApp(body) {
   return json(202, listing);
 }
 
+function approveMarketplaceApp(appId) {
+  const app = state.apps.get(appId);
+  if (!app) {
+    return json(404, { error: "app_not_found" });
+  }
+
+  const approved = {
+    ...app,
+    visibility: "public",
+    reviewStatus: "approved",
+    approvedAt: nowIso(),
+  };
+
+  state.apps.set(appId, approved);
+  return json(200, approved);
+}
+
 function listMarketplaceApps() {
   const apps = Array.from(state.apps.values()).filter(
     (app) => app.visibility === "public",
@@ -334,6 +390,13 @@ async function handle(request) {
     return getGenerationJob(jobMatch[1]);
   }
 
+  const artifactDownloadMatch = path.match(
+    /^\/apps\/([^/]+)\/artifacts\/([^/]+)\/download$/,
+  );
+  if (method === "GET" && artifactDownloadMatch) {
+    return downloadArtifact(artifactDownloadMatch[1], artifactDownloadMatch[2]);
+  }
+
   const artifactMatch = path.match(/^\/apps\/([^/]+)\/artifacts\/([^/]+)$/);
   if (method === "GET" && artifactMatch) {
     return getArtifact(artifactMatch[1], artifactMatch[2]);
@@ -358,6 +421,11 @@ async function handle(request) {
 
   if (method === "POST" && path === "/marketplace/apps") {
     return submitMarketplaceApp(body);
+  }
+
+  const approveMatch = path.match(/^\/marketplace\/apps\/([^/]+)\/approve$/);
+  if (method === "POST" && approveMatch) {
+    return approveMarketplaceApp(approveMatch[1]);
   }
 
   if (method === "GET" && path === "/marketplace/apps") {
