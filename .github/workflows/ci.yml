@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check examples, apps, and runtimes
+        run: python3 tools/cheeko check
+
+      - name: Build simulator and render example screenshots
+        run: |
+          for app in hello_display animated_face cheeko_pet tilt_maze; do
+            python3 tools/cheeko run "examples/$app" --screenshot "$app.bmp" --ticks 60
+          done
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-screenshots
+          path: build/sim/*/*.bmp
+
+      - name: Cloud demo loop
+        run: node demo/run-local-loop.js

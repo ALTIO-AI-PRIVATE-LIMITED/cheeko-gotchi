@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""Cheeko Gotchi SDK command-line helper.
+
+Works on Windows, macOS, and Linux. On Windows run it as
+`python tools\\cheeko <command>` or via the `tools\\cheeko.cmd` wrapper.
+"""
 import argparse
 import json
 import os
@@ -11,18 +16,53 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BOARD_FILE = ROOT / "boards" / "cheeko-gotchi" / "board.json"
 MANIFEST_SCHEMA = ROOT / "schemas" / "cheekoai-app-manifest.schema.json"
+SIM_RUNTIME = ROOT / "sim" / "runtime" / "cheeko_sim.cc"
+ARDUINO_RUNTIME = ROOT / "firmware" / "arduino_runtime"
+FQBN = "esp32:esp32:XIAO_ESP32S3:PSRAM=opi,PartitionScheme=tinyuf2_noota"
+IS_WINDOWS = platform.system() == "Windows"
 
+
+# ---------------------------------------------------------------------------
+# Environment probing
+# ---------------------------------------------------------------------------
 
 def find_ports():
+    if IS_WINDOWS:
+        return find_ports_windows()
     patterns = [
-        "/dev/cu.usbmodem*",
-        "/dev/ttyACM*",
-        "/dev/ttyUSB*",
-        "/dev/cu.SLAB_USBtoUART*",
+        "dev/cu.usbmodem*",
+        "dev/ttyACM*",
+        "dev/ttyUSB*",
+        "dev/cu.SLAB_USBtoUART*",
     ]
     ports = []
     for pattern in patterns:
-        ports.extend(str(path) for path in Path("/").glob(pattern.lstrip("/")))
+        ports.extend("/" + str(path.relative_to("/")) if not str(path).startswith("/") else str(path)
+                     for path in Path("/").glob(pattern))
+    return sorted(set(str(p) for p in ports))
+
+
+def find_ports_windows():
+    try:
+        import winreg
+    except ImportError:
+        return []
+    ports = []
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DEVICEMAP\SERIALCOMM")
+    except OSError:
+        return []
+    try:
+        index = 0
+        while True:
+            try:
+                _, value, _ = winreg.EnumValue(key, index)
+                ports.append(str(value))
+                index += 1
+            except OSError:
+                break
+    finally:
+        winreg.CloseKey(key)
     return sorted(set(ports))
 
 
@@ -30,36 +70,60 @@ def command_exists(name):
     return shutil.which(name) is not None
 
 
-def idf_status():
+def esp_idf_status():
     if command_exists("idf.py"):
-        return "ok"
-    known_exports = [
-        Path.home() / "esp" / "v5.5.2" / "esp-idf" / "export.sh",
-        Path.home() / "esp" / "esp-idf" / "export.sh",
+        return "ok (on PATH)"
+    candidates = [
+        Path.home() / "esp" / "v5.5.2" / "esp-idf",
+        Path.home() / "esp" / "esp-idf",
+        Path("C:/Espressif/frameworks"),
     ]
-    for export in known_exports:
-        if export.exists():
-            return f"available at {export}"
-    return "not found"
+    for candidate in candidates:
+        if candidate.exists():
+            return f"installed at {candidate} (not on PATH)"
+    return "not found (only needed for the ESP-IDF firmware scaffold)"
 
+
+def check(label, ok, hint=""):
+    mark = "ok" if ok else "MISSING"
+    line = f"  {label:<14} {mark}"
+    if not ok and hint:
+        line += f"   -> {hint}"
+    print(line)
+    return ok
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
 
 def print_doctor(args):
     print("Cheeko Doctor")
-    print(f"Host: {platform.system()} {platform.machine()}")
-    print(f"Python: {sys.version.split()[0]}")
+    print(f"Host: {platform.system()} {platform.machine()}, Python {sys.version.split()[0]}")
     print(f"SDK root: {ROOT}")
-    print(f"Board metadata: {'ok' if BOARD_FILE.exists() else 'missing'}")
-    print(f"git: {'ok' if command_exists('git') else 'missing'}")
-    print(f"ESP-IDF: {idf_status()}")
-    print(f"arduino-cli: {'ok' if command_exists('arduino-cli') else 'optional/missing'}")
-    ports = find_ports()
-    print(f"Device port: {ports[0] if ports else 'not found'}")
-    print(f"OPENAI_API_KEY: {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
     print()
+    print("Core (needed for the simulator - no hardware required):")
+    check("g++", command_exists("g++"), "install MinGW-w64 (Windows) / Xcode CLT (macOS) / build-essential (Linux)")
+    check("node", command_exists("node"), "install Node.js - needed for demo-loop and the local cloud service")
+    check("board.json", BOARD_FILE.exists())
+    check("sim runtime", SIM_RUNTIME.exists())
+    print()
+    print("Device (only needed to flash real hardware):")
+    check("arduino-cli", command_exists("arduino-cli"), "https://arduino.github.io/arduino-cli - then: arduino-cli core install esp32:esp32")
+    check("git", command_exists("git"))
+    print(f"  {'ESP-IDF':<14} {esp_idf_status()}")
+    ports = find_ports()
+    print(f"  {'serial port':<14} {ports[0] if ports else 'not found'}")
+    print()
+    if not command_exists("g++"):
+        print("Without g++ you cannot run the simulator. Install a C++ compiler first.")
     if not ports:
-        print("Plug in Cheeko Gotchi with a data USB-C cable, then run ./tools/cheeko ports")
-    if not command_exists("idf.py"):
-        print("ESP-IDF is not on PATH. Try: source ~/esp/v5.5.2/esp-idf/export.sh")
+        print("No device detected. The simulator works without one:")
+        print(f"  {cli_name()} run examples/hello_display")
+
+
+def cli_name():
+    return "python tools\\cheeko" if IS_WINDOWS else "./tools/cheeko"
 
 
 def print_ports(args):
@@ -73,8 +137,7 @@ def print_ports(args):
 
 def print_board(args):
     with BOARD_FILE.open() as f:
-        board = json.load(f)
-    print(json.dumps(board, indent=2))
+        print(json.dumps(json.load(f), indent=2))
 
 
 def print_self_test(args):
@@ -85,8 +148,8 @@ def print_self_test(args):
     print("4. Mic: level meter reacts to tapping")
     print("5. Wi-Fi: scan nearby networks")
     print()
-    print("Current runnable options:")
-    print("- Read examples/self_test/README.md")
+    print("Runnable now, no hardware needed:")
+    print(f"  {cli_name()} run examples/self_test")
 
 
 def print_product(args):
@@ -103,11 +166,11 @@ def print_product(args):
     print("4. Marketplace after install safety and rollback are proven")
 
 
-def print_manifest(args):
-    manifest = {
+def build_manifest(name):
+    return {
         "schema": "ai.cheeko.app.v1",
-        "app_id": f"com.cheeko.{args.name.replace('-', '_')}",
-        "name": args.name.replace("_", " ").replace("-", " ").title(),
+        "app_id": f"com.cheeko.{name.replace('-', '_')}",
+        "name": name.replace("_", " ").replace("-", " ").title(),
         "version": "0.1.0",
         "sdk": {"min": "0.1.0", "max": "0.x"},
         "boards": ["cheeko-gotchi"],
@@ -116,12 +179,159 @@ def print_manifest(args):
         "artifacts": [],
         "rollback": {"keep_previous": True, "healthcheck_seconds": 15},
     }
-    print(json.dumps(manifest, indent=2))
+
+
+def print_manifest(args):
+    print(json.dumps(build_manifest(args.name), indent=2))
 
 
 def run_demo(args):
+    if not command_exists("node"):
+        sys.exit("demo-loop needs Node.js (https://nodejs.org). Install it and re-run.")
     script = ROOT / "demo" / "run-local-loop.js"
     subprocess.run(["node", str(script)], check=True, cwd=ROOT)
+
+
+# ---------------------------------------------------------------------------
+# build / run / flash
+# ---------------------------------------------------------------------------
+
+def resolve_app_dir(app_arg):
+    app_dir = (ROOT / app_arg).resolve() if not Path(app_arg).is_absolute() else Path(app_arg)
+    source = app_dir / "src" / "app.cc"
+    if not source.exists():
+        sys.exit(f"No app found at {app_dir} (expected {source.relative_to(app_dir)})")
+    return app_dir, source
+
+
+def build_sim(app_dir, source):
+    if not command_exists("g++"):
+        sys.exit("Simulator builds need g++. Install MinGW-w64 / Xcode CLT / build-essential.")
+    out_dir = ROOT / "build" / "sim" / app_dir.name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    exe = out_dir / ("cheeko-sim.exe" if IS_WINDOWS else "cheeko-sim")
+    cmd = [
+        "g++", "-std=gnu++14", "-O2",
+        "-I", str(ROOT / "sdk" / "include"),
+        "-I", str(ROOT / "sdk" / "runtime"),
+        str(SIM_RUNTIME), str(source),
+        "-o", str(exe),
+    ]
+    if IS_WINDOWS:
+        cmd.append("-lws2_32")
+    print(f"[build] {app_dir.name} -> {exe.relative_to(ROOT)}")
+    subprocess.run(cmd, check=True, cwd=ROOT)
+    return out_dir, exe
+
+
+def assemble_device_sketch(app_dir, source):
+    template = ARDUINO_RUNTIME / "CheekoRuntime.ino.tpl"
+    if not template.exists():
+        sys.exit(f"Device runtime not found at {ARDUINO_RUNTIME}")
+    sketch_dir = ROOT / "build" / "device" / app_dir.name / app_dir.name
+    sketch_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(template, sketch_dir / f"{app_dir.name}.ino")
+    for name in ("cheeko_runtime.cpp", "cheeko_hw.h", "cheeko_hw.cpp"):
+        shutil.copyfile(ARDUINO_RUNTIME / name, sketch_dir / name)
+    shutil.copyfile(ROOT / "sdk" / "include" / "cheeko.h", sketch_dir / "cheeko.h")
+    shutil.copyfile(ROOT / "sdk" / "runtime" / "cheeko_font.h", sketch_dir / "cheeko_font.h")
+    # The Arduino builder does not reliably compile .cc files in a sketch.
+    shutil.copyfile(source, sketch_dir / "app.cpp")
+    return sketch_dir
+
+
+def build_device(app_dir, source):
+    sketch_dir = assemble_device_sketch(app_dir, source)
+    print(f"[build] assembled sketch at {sketch_dir.relative_to(ROOT)}")
+    if not command_exists("arduino-cli"):
+        print("arduino-cli is not installed, stopping after sketch assembly.")
+        print("Install it, then: arduino-cli core install esp32:esp32")
+        print(f"Compile with: arduino-cli compile --fqbn \"{FQBN}\" \"{sketch_dir}\"")
+        return sketch_dir
+    subprocess.run(["arduino-cli", "compile", "--fqbn", FQBN, str(sketch_dir)], check=True)
+    return sketch_dir
+
+
+def cmd_build(args):
+    app_dir, source = resolve_app_dir(args.app)
+    if args.target == "device":
+        build_device(app_dir, source)
+    else:
+        build_sim(app_dir, source)
+
+
+def cmd_run(args):
+    app_dir, source = resolve_app_dir(args.app)
+    out_dir, exe = build_sim(app_dir, source)
+    run_cmd = [str(exe), "--port", str(args.port)]
+    if args.screenshot:
+        run_cmd += ["--screenshot", args.screenshot, "--ticks", str(args.ticks)]
+    if args.no_open:
+        run_cmd.append("--no-open")
+    print(f"[run] {app_dir.name} (Ctrl+C to quit)")
+    try:
+        subprocess.run(run_cmd, check=True, cwd=out_dir)
+    except KeyboardInterrupt:
+        pass
+
+
+def cmd_flash(args):
+    app_dir, source = resolve_app_dir(args.app)
+    if not command_exists("arduino-cli"):
+        sys.exit("Flashing needs arduino-cli: https://arduino.github.io/arduino-cli")
+    sketch_dir = build_device(app_dir, source)
+    port = args.device_port or (find_ports()[0] if find_ports() else None)
+    if not port:
+        sys.exit("No serial port found. Plug the device in with a data USB-C cable.")
+    subprocess.run(["arduino-cli", "upload", "--fqbn", FQBN, "-p", port, str(sketch_dir)], check=True)
+    print(f"Flashed {app_dir.name} to {port}")
+
+
+def cmd_check(args):
+    if not command_exists("g++"):
+        sys.exit("check needs g++ on PATH")
+    failures = []
+
+    def gxx(label, cmd, cwd=ROOT):
+        result = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+        status = "PASS" if result.returncode == 0 else "FAIL"
+        print(f"  {status} {label}")
+        if result.returncode != 0:
+            failures.append(label)
+            for line in (result.stderr or "").splitlines()[:8]:
+                print(f"       {line}")
+
+    print("Examples (syntax vs sdk/include/cheeko.h):")
+    for app_cc in sorted((ROOT / "examples").glob("*/src/app.cc")):
+        gxx(app_cc.parent.parent.name,
+            ["g++", "-std=gnu++14", "-fsyntax-only",
+             "-I", str(ROOT / "sdk" / "include"), str(app_cc)])
+    apps_dir = ROOT / "apps"
+    if apps_dir.exists():
+        print("Apps:")
+        for app_cc in sorted(apps_dir.glob("*/src/app.cc")):
+            gxx(app_cc.parent.parent.name,
+                ["g++", "-std=gnu++14", "-fsyntax-only",
+                 "-I", str(ROOT / "sdk" / "include"), str(app_cc)])
+
+    print("Firmware scaffold (ESP-IDF base, host syntax pass):")
+    base = ROOT / "firmware" / "cheekoai_base"
+    sources = [str(p) for p in sorted((base / "main").glob("*.cc"))]
+    sources += [str(p) for p in sorted((base / "main" / "services").glob("*.cc"))]
+    gxx("cheekoai_base", ["g++", "-std=c++14", "-fsyntax-only"] + sources + ["-Imain"], cwd=base)
+
+    print("Arduino device runtime (host syntax pass with stubs):")
+    runtime = ROOT / "firmware" / "arduino_runtime"
+    gxx("arduino_runtime",
+        ["g++", "-std=c++14", "-fsyntax-only", "-DCHEEKO_SYNTAX_CHECK",
+         "-I", str(ROOT / "sdk" / "include"), "-I", str(ROOT / "sdk" / "runtime"),
+         "-I", str(runtime), "-include", "test/arduino_stubs.h",
+         "cheeko_runtime.cpp", "cheeko_hw.cpp"], cwd=runtime)
+
+    print()
+    if failures:
+        sys.exit(f"{len(failures)} check(s) failed: {', '.join(failures)}")
+    print("All checks passed.")
 
 
 def new_app(args):
@@ -129,7 +339,13 @@ def new_app(args):
     src_dir = app_dir / "src"
     src_dir.mkdir(parents=True, exist_ok=False)
     (app_dir / "README.md").write_text(
-        f"# {args.name}\n\nCheeko Gotchi SDK app.\n", encoding="utf-8"
+        f"# {args.name}\n\nCheeko Gotchi SDK app.\n\n"
+        f"Run in the simulator (no hardware needed):\n\n"
+        f"```bash\n{cli_name()} run apps/{args.name}\n```\n",
+        encoding="utf-8",
+    )
+    (app_dir / "manifest.json").write_text(
+        json.dumps(build_manifest(args.name), indent=2) + "\n", encoding="utf-8"
     )
     (src_dir / "app.cc").write_text(
         '#include "cheeko.h"\n\n'
@@ -137,6 +353,7 @@ def new_app(args):
         f"class {args.class_name} : public CheekoApp {{\n"
         " public:\n"
         "  void OnStart() override {\n"
+        "    Cheeko().display().Clear(Color::Black);\n"
         '    Cheeko().display().CenterText(80, "Hello Cheeko");\n'
         "  }\n"
         "};\n\n"
@@ -144,35 +361,59 @@ def new_app(args):
         encoding="utf-8",
     )
     print(f"Created {app_dir}")
+    print("Next steps:")
+    print(f"  {cli_name()} run apps/{args.name}      # see it in the simulator")
+    print(f"  {cli_name()} build apps/{args.name} --target device   # compile for hardware")
 
 
 def main():
     parser = argparse.ArgumentParser(prog="cheeko")
     sub = parser.add_subparsers(required=True)
 
-    doctor = sub.add_parser("doctor")
+    doctor = sub.add_parser("doctor", help="check your machine and any connected device")
     doctor.set_defaults(func=print_doctor)
 
-    ports = sub.add_parser("ports")
+    ports = sub.add_parser("ports", help="list serial ports")
     ports.set_defaults(func=print_ports)
 
-    board = sub.add_parser("board")
+    board = sub.add_parser("board", help="print board capability metadata")
     board.set_defaults(func=print_board)
 
-    self_test = sub.add_parser("self-test")
+    self_test = sub.add_parser("self-test", help="hardware checklist")
     self_test.set_defaults(func=print_self_test)
 
-    product = sub.add_parser("product")
+    product = sub.add_parser("product", help="print product contract pointers")
     product.set_defaults(func=print_product)
 
-    manifest = sub.add_parser("manifest")
+    manifest = sub.add_parser("manifest", help="print a starter app manifest")
     manifest.add_argument("name")
     manifest.set_defaults(func=print_manifest)
 
-    demo = sub.add_parser("demo-loop")
+    demo = sub.add_parser("demo-loop", help="run the local cloud->OTA loop (needs Node)")
     demo.set_defaults(func=run_demo)
 
-    new = sub.add_parser("new")
+    build = sub.add_parser("build", help="build an app for the simulator or device")
+    build.add_argument("app", help="app directory, e.g. examples/hello_display")
+    build.add_argument("--target", choices=["sim", "device"], default="sim")
+    build.set_defaults(func=cmd_build)
+
+    run = sub.add_parser("run", help="build an app and run it in the simulator")
+    run.add_argument("app", help="app directory, e.g. examples/animated_face")
+    run.add_argument("--port", type=int, default=8123)
+    run.add_argument("--screenshot", help="write a BMP and exit instead of serving")
+    run.add_argument("--ticks", type=int, default=120)
+    run.add_argument("--no-open", action="store_true", help="do not open the browser")
+    run.set_defaults(func=cmd_run)
+
+    flash = sub.add_parser("flash", help="build for device and flash over USB")
+    flash.add_argument("app")
+    flash.add_argument("--device-port", help="serial port (default: first detected)")
+    flash.set_defaults(func=cmd_flash)
+
+    checkp = sub.add_parser("check", help="syntax-check all examples, apps, and runtimes")
+    checkp.set_defaults(func=cmd_check)
+
+    new = sub.add_parser("new", help="scaffold a new app in apps/")
     new.add_argument("name")
     new.add_argument("--class-name", default="MyCheekoApp")
     new.set_defaults(func=new_app)

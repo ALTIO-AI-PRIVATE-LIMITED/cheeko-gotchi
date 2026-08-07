@@ -27,16 +27,27 @@ locked at **v0.1.0**. The full contract is in
 
 ## Quick Start
 
+No device needed — apps run in a **desktop simulator** in your browser
+(you need `g++`; run `doctor` to check):
+
 ```bash
-./tools/cheeko doctor        # check your machine and any connected device
-./tools/cheeko new my_app    # scaffold a new app
-./tools/cheeko demo-loop     # run the full cloud->OTA loop, no hardware needed
+# Windows: python tools\cheeko <command>     macOS/Linux: ./tools/cheeko <command>
+python tools/cheeko doctor                    # check your machine
+python tools/cheeko run examples/cheeko_pet   # run an app in the simulator
+python tools/cheeko new my_app                # scaffold a new app in apps/
+python tools/cheeko run apps/my_app           # run yours
+python tools/cheeko check                     # syntax-check every app + runtime
+python tools/cheeko demo-loop                 # full cloud->OTA loop (needs Node)
 ```
 
-`demo-loop` is the fastest way to understand the platform without a device: it
-starts the local cloud service in-process, pairs a simulated device, generates a
-signed app manifest, commands a Wi-Fi OTA install, and simulates device
-verification.
+The simulator ([`sim/`](sim/)) implements the entire SDK on your computer:
+screen in the browser, click = touch, tilt sliders + shake button, WebAudio
+tones, a cloud panel for testing `OnCloudText`. See [`sim/README.md`](sim/README.md).
+
+With a real device, `python tools/cheeko flash examples/cheeko_pet` assembles an
+Arduino sketch from [`firmware/arduino_runtime/`](firmware/arduino_runtime/)
+(built on the verified bring-up in [`SKILL.md`](SKILL.md)) and flashes it over
+USB via `arduino-cli`.
 
 ## Examples
 
@@ -52,6 +63,10 @@ verification.
 | [`audio_loopback`](examples/audio_loopback/) | Simultaneous capture and playback |
 | [`cloud_voice_bot`](examples/cloud_voice_bot/) | Push-to-talk cloud voice sessions |
 | [`self_test`](examples/self_test/) | Display, touch, speaker, mic, Wi-Fi checklist |
+| [`fridge_magnet`](examples/fridge_magnet/) | Persistent notes board with touch hit-testing |
+| [`claude_agent`](examples/claude_agent/) | Claude text round-trip with word-wrapped replies |
+| [`tilt_maze`](examples/tilt_maze/) | Tilt physics and partial redraw |
+| [`cheeko_pet`](examples/cheeko_pet/) | The full persistent virtual pet pattern |
 
 See [`docs/guides/example-apps.md`](docs/guides/example-apps.md) for which one to
 start from.
@@ -61,7 +76,10 @@ start from.
 | Path | Purpose |
 | --- | --- |
 | `sdk/include/` | The public SDK header — the stable app contract |
-| `examples/` | Ten example apps to fork |
+| `sdk/runtime/` | Shared runtime pieces (bitmap font) used by sim + device |
+| `sim/` | Desktop simulator — run any app in your browser, no hardware |
+| `examples/` | Fourteen example apps to fork |
+| `apps/` | Your own apps (`cheeko new` scaffolds here) |
 | `docs/sdk/` | API reference, app lifecycle, SDK roadmap |
 | `docs/guides/` | Getting started and cloud/audio workflows |
 | `docs/product/` | Platform architecture, OTA flow, app package contract |
@@ -69,8 +87,10 @@ start from.
 | `schemas/` | Machine-readable app package contract |
 | `cloud/` | Cloud builder API contract and a runnable local service |
 | `demo/` | Local end-to-end loop: pairing, generation, OTA, install report |
-| `firmware/cheekoai_base/` | Base firmware/runtime scaffold |
-| `tools/cheeko` | Local CLI helper |
+| `firmware/arduino_runtime/` | On-device SDK runtime (Arduino path, from SKILL.md) |
+| `firmware/cheekoai_base/` | Product firmware scaffold (ESP-IDF path) |
+| `SKILL.md` | Verified hardware bring-up guide for the real board |
+| `tools/cheeko` | Cross-platform CLI: doctor, run, build, flash, check |
 
 ## Device Model
 
@@ -87,11 +107,19 @@ part of this repository. Apps never depend on it.
 
 ## Status
 
-v0.1 is a developer foundation, not a finished runtime. The app lifecycle and
-public SDK surface are locked; driver adapters behind the runtime are still
-being wired up. See [`docs/sdk/roadmap.md`](docs/sdk/roadmap.md) for what lands
-when, and [`docs/product/architecture.md`](docs/product/architecture.md) for the
-platform blueprint.
+The app lifecycle and public SDK surface are locked at v0.1.0, and the SDK now
+has two runtimes:
+
+- **Simulator** (`sim/`) — implements the full SDK on the desktop. Every
+  example runs today with just `g++`.
+- **Arduino device runtime** (`firmware/arduino_runtime/`) — implements the SDK
+  on the real board using the verified bring-up in [`SKILL.md`](SKILL.md).
+  Derived from hardware-tested code; re-verify on your unit when flashing.
+  Microphone capture (`OnMicAudio`) is not wired up yet in either runtime.
+
+The ESP-IDF scaffold (`firmware/cheekoai_base/`) remains the blueprint for the
+signed-OTA product firmware. See [`docs/sdk/roadmap.md`](docs/sdk/roadmap.md)
+and [`docs/product/architecture.md`](docs/product/architecture.md).
 
 ## Contributing
 
