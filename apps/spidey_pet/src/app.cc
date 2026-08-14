@@ -76,7 +76,7 @@ class SpideyPetApp : public CheekoApp {
       return;
     }
     switch (mode_) {
-      case Mode::Idle: TickIdle(); break;
+      case Mode::Idle: break;
       case Mode::Quotes: break;
       case Mode::Thwip: TickThwip(); break;
       case Mode::Climb: TickClimb(); break;
@@ -113,16 +113,6 @@ class SpideyPetApp : public CheekoApp {
       case Mode::Quotes: if (event.pressed) NextQuote(); break;
       case Mode::Thwip: if (event.pressed) TouchThwip(event); break;
       case Mode::Climb: TouchClimb(event); break;
-    }
-  }
-
-  void OnShake() override {
-    if (booting_) return;
-    if (mode_ == Mode::Idle) {
-      sense_until_ = now_ + 1200;
-      Cheeko().speaker().Tone(1560, 90);
-      Cheeko().speaker().Tone(2080, 120);
-      DrawIdle(true);
     }
   }
 
@@ -259,7 +249,7 @@ class SpideyPetApp : public CheekoApp {
     mode_ = mode;
     switch (mode_) {
       case Mode::Idle:
-        DrawIdle(false);
+        DrawIdle();
         break;
       case Mode::Quotes:
         quote_index_ = -1;
@@ -276,22 +266,10 @@ class SpideyPetApp : public CheekoApp {
 
   // ---- Idle: the emblem ---------------------------------------------------
 
-  void DrawIdle(bool sense) {
+  void DrawIdle() {
     auto& d = Cheeko().display();
     d.Clear(kNavy);
     DrawEmblem(d, W() / 2 - kEMBLEM_W / 2, (H() - kEMBLEM_H) / 2);
-    if (sense) {
-      DrawBolts(W() / 2, H() / 2, 104);
-      d.FillRect(0, 0, W(), 8, Color::Amber);
-      d.FillRect(0, H() - 8, W(), 8, Color::Amber);
-    }
-  }
-
-  void TickIdle() {
-    if (sense_until_ != 0 && now_ > sense_until_) {
-      sense_until_ = 0;
-      DrawIdle(false);
-    }
   }
 
   // ---- Quotes -------------------------------------------------------------
@@ -604,7 +582,6 @@ class SpideyPetApp : public CheekoApp {
   bool booting_ = true;
   uint32_t now_ = 0;
   uint32_t rng_ = 2026;
-  uint32_t sense_until_ = 0;
   uint32_t focused_until_ = 0;
   uint32_t poll_next_ms_ = 0;
   int quote_index_ = -1;
