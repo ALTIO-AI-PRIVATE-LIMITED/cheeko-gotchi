@@ -1,0 +1,18 @@
+{
+  "schema": "ai.cheeko.app.v1",
+  "app_id": "com.cheeko.spidey_pet",
+  "name": "Spidey Pet",
+  "version": "0.1.0",
+  "sdk": {
+    "min": "0.1.0",
+    "max": "0.x"
+  },
+  "boards": ["cheeko-gotchi"],
+  "entrypoint": "CreateCheekoApp",
+  "permissions": ["display", "touch", "buttons", "speaker.tone", "storage.local"],
+  "artifacts": [],
+  "rollback": {
+    "keep_previous": true,
+    "healthcheck_seconds": 15
+  }
+}
