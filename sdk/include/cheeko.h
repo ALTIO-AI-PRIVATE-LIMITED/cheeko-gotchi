@@ -78,6 +78,12 @@ struct Color {  // [Stable]
 
 class Display {  // [Stable]
  public:
+  // Logical screen size in pixels. Portrait units report 240x296; units with
+  // a landscape-mounted panel report 296x240. Lay out relative to these
+  // instead of hardcoding coordinates. [Experimental]
+  int Width();
+  int Height();
+
   void Clear(uint32_t rgb);
   void Text(int x, int y, const std::string& text);
   void CenterText(int y, const std::string& text);
@@ -93,6 +99,10 @@ class Speaker {  // [Stable]
  public:
   void Play(const std::string& path);
   void Tone(int frequency_hz, int duration_ms);
+  // Play raw 16-bit signed mono PCM embedded in the app (generate arrays
+  // with tools/audio2cheeko.py). Blocks on-device until the clip is queued,
+  // so keep clips to a few seconds. [Experimental]
+  void PlayPcm(const int16_t* samples, size_t sample_count, int sample_rate_hz);
   void SetVolume(int volume);  // 0..100
 };
 

@@ -270,6 +270,10 @@ void WriteBmp(const std::string& path) {
 
 namespace cheeko {
 
+int Display::Width() { return kWidth; }
+
+int Display::Height() { return kHeight; }
+
 void Display::Clear(uint32_t rgb) { FillRectPx(0, 0, kWidth, kHeight, rgb); }
 
 void Display::Text(int x, int y, const std::string& text) {
@@ -335,8 +339,38 @@ void Display::Image(const std::string& path) {
 }
 
 void Speaker::Play(const std::string& path) {
+  // Sim-only preview of the future PCM/voice pipeline: a "say:<text>" path is
+  // spoken via the browser's text-to-speech. On the device this logs until
+  // asset playback lands, so apps must treat voice as a bonus, not a feature.
+  if (path.compare(0, 4, "say:") == 0) {
+    PushEvent("say " + Base64Encode(path.substr(4)));
+    return;
+  }
   Cheeko().log().Info("Speaker::Play(" + path + ") — asset playback is simulated as a tone");
   PushEvent("tone 660 180 " + std::to_string(g_state.volume));
+}
+
+void Speaker::PlayPcm(const int16_t* samples, size_t sample_count,
+                      int sample_rate_hz) {
+  if (samples == nullptr || sample_count == 0) return;
+  // Wrap the samples in a WAV container and hand it to the page's WebAudio.
+  const uint32_t data_bytes = (uint32_t)(sample_count * 2);
+  const uint32_t byte_rate = (uint32_t)sample_rate_hz * 2;
+  std::string wav;
+  wav.reserve(44 + data_bytes);
+  auto u32 = [&wav](uint32_t v) {
+    wav += (char)(v & 0xff); wav += (char)((v >> 8) & 0xff);
+    wav += (char)((v >> 16) & 0xff); wav += (char)((v >> 24) & 0xff);
+  };
+  auto u16 = [&wav](uint16_t v) {
+    wav += (char)(v & 0xff); wav += (char)((v >> 8) & 0xff);
+  };
+  wav += "RIFF"; u32(36 + data_bytes); wav += "WAVEfmt ";
+  u32(16); u16(1); u16(1); u32((uint32_t)sample_rate_hz); u32(byte_rate);
+  u16(2); u16(16);
+  wav += "data"; u32(data_bytes);
+  wav.append((const char*)samples, data_bytes);
+  PushEvent("pcm " + Base64Encode(wav));
 }
 
 void Speaker::Tone(int frequency_hz, int duration_ms) {

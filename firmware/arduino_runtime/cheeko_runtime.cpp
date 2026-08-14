@@ -12,9 +12,13 @@
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #endif
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "cheeko.h"
 #include "cheeko_font.h"
@@ -39,6 +43,8 @@ uint32_t g_bg_rgb = 0x000000;
 
 // Touch state for Touch::Get()/IsPressed() and edge/move dispatch.
 TouchEvent g_touch;
+// Print mapped touch coords on each press (enabled by serial tuning commands).
+bool g_touch_echo = false;
 
 // Buttons: pin, SDK id, polarity, last state.
 struct ButtonState {
@@ -103,17 +109,18 @@ void DrawGlyph2x(int x, int y, char c, uint16_t fg, uint16_t bg) {
   const uint8_t *glyph = cheeko::FontGlyph(c);
   uint8_t buf[kGlyphCellW * kGlyphCellH * 2];
   int idx = 0;
-  for (int row = 0; row < cheeko::kFontHeight; ++row) {
-    for (int rep = 0; rep < 2; ++rep) {          // 2x vertical
-      for (int col = 0; col < cheeko::kFontWidth; ++col) {
-        uint16_t color = (glyph[col] >> row) & 0x01 ? fg : bg;
-        uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xff);
-        buf[idx++] = hi; buf[idx++] = lo;        // 2x horizontal
-        buf[idx++] = hi; buf[idx++] = lo;
-      }
-      uint8_t hi = (uint8_t)(bg >> 8), lo = (uint8_t)(bg & 0xff);
-      buf[idx++] = hi; buf[idx++] = lo;          // 2px spacing column
-      buf[idx++] = hi; buf[idx++] = lo;
+  // Cell pixel (gx, gy) at 2x scale; the last two columns are glyph spacing.
+  auto cellPixel = [&](int gx, int gy) -> uint16_t {
+    if (gx >= cheeko::kFontWidth * 2) return bg;
+    return (glyph[gx / 2] >> (gy / 2)) & 0x01 ? fg : bg;
+  };
+  // Always row-major: the controller's MV bit handles axis exchange, so the
+  // stream order is the same in portrait and landscape (see lcdSetWindow).
+  for (int gy = 0; gy < kGlyphCellH; ++gy) {
+    for (int gx = 0; gx < kGlyphCellW; ++gx) {
+      uint16_t color = cellPixel(gx, gy);
+      buf[idx++] = (uint8_t)(color >> 8);
+      buf[idx++] = (uint8_t)(color & 0xff);
     }
   }
   cheeko_hw::lcdSetWindow((uint16_t)x, (uint16_t)y,
@@ -134,6 +141,11 @@ void PollTouch() {
     g_touch.x = x;
     g_touch.y = y;
     g_touch.pressed = true;
+    if (!was_pressed && g_touch_echo) {
+      char line[40];
+      snprintf(line, sizeof(line), "[I] touch x=%d y=%d", x, y);
+      Serial.println(line);
+    }
     // Press edge, plus movement while held.
     if ((!was_pressed || moved) && g_app) g_app->OnTouch(g_touch);
   } else if (g_touch.pressed) {
@@ -180,6 +192,234 @@ void PollMotion(uint32_t now_ms) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Per-unit orientation: NVS persistence + live serial tuning.
+//
+// SKILL.md determined display orientation empirically on one reference unit
+// and warns that other units differ (they do: rotated/mirrored panel batches
+// exist). Instead of reflashing per guess, these serial commands tune the
+// panel live and store the result in NVS namespace "cheeko_sys":
+//
+//   SHOW                  draw the orientation test pattern
+//   L / R                 rotate the screen 90 deg left / right
+//   M / F                 mirror left-right / flip top-bottom
+//   C                     toggle red/blue color order (BGR bit)
+//   MADCTL <hex>          set a raw MADCTL value directly
+//   OFFSET <caset> <raset>  GRAM window offsets for rotated panels
+//   TOUCHMAP <swap> <invx> <invy>  align touch with the display (0/1 each)
+//   SAVE                  persist current values across reboots and flashes
+//   INFO                  print current values
+//
+// Foolproof procedure: SHOW, press L until upright, M once if text is
+// mirrored (then L again if needed), C if the RED square shows blue, SAVE.
+// ---------------------------------------------------------------------------
+
+void LoadOrientation() {
+  Preferences p;
+  if (!p.begin("cheeko_sys", true)) return;  // nothing saved yet: defaults
+  cheeko_hw::g_madctl = (uint8_t)p.getInt("madctl", cheeko_hw::g_madctl);
+  cheeko_hw::g_caset_offset = p.getInt("off_c", cheeko_hw::g_caset_offset);
+  cheeko_hw::g_raset_offset = p.getInt("off_r", cheeko_hw::g_raset_offset);
+  cheeko_hw::g_touch_swap_xy = p.getInt("t_swap", cheeko_hw::g_touch_swap_xy ? 1 : 0) != 0;
+  cheeko_hw::g_touch_invert_x = p.getInt("t_invx", cheeko_hw::g_touch_invert_x ? 1 : 0) != 0;
+  cheeko_hw::g_touch_invert_y = p.getInt("t_invy", cheeko_hw::g_touch_invert_y ? 1 : 0) != 0;
+  p.end();
+}
+
+void PrintOrientation() {
+  char line[96];
+  snprintf(line, sizeof(line),
+           "[I] MADCTL=0x%02X OFFSET=%d,%d TOUCHMAP=%d,%d,%d",
+           cheeko_hw::g_madctl, cheeko_hw::g_caset_offset,
+           cheeko_hw::g_raset_offset, cheeko_hw::g_touch_swap_xy ? 1 : 0,
+           cheeko_hw::g_touch_invert_x ? 1 : 0,
+           cheeko_hw::g_touch_invert_y ? 1 : 0);
+  Serial.println(line);
+}
+
+void SaveOrientation() {
+  Preferences p;
+  if (!p.begin("cheeko_sys", false)) {
+    Serial.println("[E] could not open NVS to save orientation");
+    return;
+  }
+  p.putInt("madctl", (int)cheeko_hw::g_madctl);
+  p.putInt("off_c", cheeko_hw::g_caset_offset);
+  p.putInt("off_r", cheeko_hw::g_raset_offset);
+  p.putInt("t_swap", cheeko_hw::g_touch_swap_xy ? 1 : 0);
+  p.putInt("t_invx", cheeko_hw::g_touch_invert_x ? 1 : 0);
+  p.putInt("t_invy", cheeko_hw::g_touch_invert_y ? 1 : 0);
+  p.end();
+  Serial.println("[I] orientation saved; it now survives reboots and reflashes");
+}
+
+void DrawTestPattern() {
+  auto &d = cheeko::Cheeko().display();
+  const int w = cheeko_hw::lcdWidth();
+  const int h = cheeko_hw::lcdHeight();
+  d.Clear(0x101820);
+  d.FillRect(0, 0, 44, 44, 0xff0000);
+  d.Text(6, 50, "RED");
+  d.FillRect(w - 44, 0, 44, 44, 0x00ff00);
+  d.Text(w - 42, 50, "GRN");
+  d.FillRect(0, h - 44, 44, 44, 0x0000ff);
+  d.Text(6, h - 64, "BLU");
+  d.FillRect(w - 44, h - 44, 44, 44, 0xffffff);
+  d.Text(w - 42, h - 64, "WHT");
+  d.CenterText(h / 3, "ABC abc 123");
+  char line[32];
+  snprintf(line, sizeof(line), "%s %dx%d",
+           cheeko_hw::lcdSwapped() ? "LANDSCAPE" : "PORTRAIT", w, h);
+  d.CenterText(h / 3 + 26, line);
+  snprintf(line, sizeof(line), "MADCTL 0x%02X", cheeko_hw::g_madctl);
+  d.CenterText(128, line);
+  snprintf(line, sizeof(line), "OFFSET %d %d",
+           cheeko_hw::g_caset_offset, cheeko_hw::g_raset_offset);
+  d.CenterText(148, line);
+  d.CenterText(190, "buttons must be UP");
+  d.CenterText(210, "RED top-left");
+  PrintOrientation();
+}
+
+// The 8 MADCTL orientations form the square's symmetry group. To make L/R/M/F
+// behave like real rotations/mirrors of what the user SEES (L twice = 180,
+// not back-to-start), compose 2x2 transform matrices instead of XORing bits.
+struct Mat2 {
+  int a, b, c, d;  // [[a, b], [c, d]]
+};
+
+Mat2 MadctlToMatrix(uint8_t v) {
+  // Displayed = Mirror(MX, MY) applied after the optional MV transpose.
+  Mat2 m = (v & 0x20) ? Mat2{0, 1, 1, 0} : Mat2{1, 0, 0, 1};
+  if (v & 0x40) { m.a = -m.a; m.b = -m.b; }  // MX
+  if (v & 0x80) { m.c = -m.c; m.d = -m.d; }  // MY
+  return m;
+}
+
+uint8_t MatrixToMadctl(Mat2 m, bool bgr) {
+  uint8_t v = bgr ? 0x08 : 0x00;
+  if (m.a != 0) {  // no transpose component
+    if (m.a < 0) v |= 0x40;
+    if (m.d < 0) v |= 0x80;
+  } else {
+    v |= 0x20;
+    if (m.b < 0) v |= 0x40;
+    if (m.c < 0) v |= 0x80;
+  }
+  return v;
+}
+
+Mat2 Mul(Mat2 x, Mat2 y) {
+  return Mat2{x.a * y.a + x.b * y.c, x.a * y.b + x.b * y.d,
+              x.c * y.a + x.d * y.c, x.c * y.b + x.d * y.d};
+}
+
+void ApplyVisualTransform(Mat2 t) {
+  uint8_t v = cheeko_hw::g_madctl;
+  Mat2 next = Mul(t, MadctlToMatrix(v));
+  cheeko_hw::lcdSetMadctl(MatrixToMadctl(next, (v & 0x08) != 0));
+  g_touch_echo = true;
+  DrawTestPattern();
+}
+
+void PollSerialTuning() {
+  static char line[96];
+  static size_t len = 0;
+  while (Serial.available() > 0) {
+    char c = (char)Serial.read();
+    if (c == '\r') continue;
+    if (c != '\n') {
+      if (len < sizeof(line) - 1) line[len++] = c;
+      continue;
+    }
+    line[len] = '\0';
+    len = 0;
+    if (line[0] == '\0') continue;
+
+    if (strcmp(line, "L") == 0) {
+      ApplyVisualTransform(Mat2{0, -1, 1, 0});
+    } else if (strcmp(line, "R") == 0) {
+      ApplyVisualTransform(Mat2{0, 1, -1, 0});
+    } else if (strcmp(line, "M") == 0) {
+      ApplyVisualTransform(Mat2{-1, 0, 0, 1});
+    } else if (strcmp(line, "F") == 0) {
+      ApplyVisualTransform(Mat2{1, 0, 0, -1});
+    } else if (strcmp(line, "C") == 0) {
+      cheeko_hw::lcdSetMadctl(cheeko_hw::g_madctl ^ 0x08);
+      DrawTestPattern();
+    } else if (strncmp(line, "MADCTL ", 7) == 0) {
+      cheeko_hw::lcdSetMadctl((uint8_t)strtol(line + 7, nullptr, 16));
+      g_touch_echo = true;
+      DrawTestPattern();
+    } else if (strncmp(line, "OFFSET ", 7) == 0) {
+      int off_c = 0, off_r = 0;
+      if (sscanf(line + 7, "%d %d", &off_c, &off_r) == 2) {
+        cheeko_hw::g_caset_offset = off_c;
+        cheeko_hw::g_raset_offset = off_r;
+        cheeko_hw::lcdClearGram();  // stale pixels outside the shifted window
+        DrawTestPattern();
+      }
+    } else if (strncmp(line, "TOUCHMAP ", 9) == 0) {
+      int swap_xy = 0, inv_x = 0, inv_y = 0;
+      if (sscanf(line + 9, "%d %d %d", &swap_xy, &inv_x, &inv_y) == 3) {
+        cheeko_hw::g_touch_swap_xy = swap_xy != 0;
+        cheeko_hw::g_touch_invert_x = inv_x != 0;
+        cheeko_hw::g_touch_invert_y = inv_y != 0;
+        g_touch_echo = true;
+        Serial.println("[I] touch map updated; tap the corners to verify");
+        PrintOrientation();
+      }
+    } else if (strncmp(line, "WIFI ", 5) == 0) {
+      const char *sep = strchr(line + 5, '|');
+      if (!sep) {
+        Serial.println("[W] usage: WIFI <ssid>|<password>");
+      } else {
+        const std::string ssid(line + 5, sep - (line + 5));
+        Preferences sys;
+        if (sys.begin("cheeko_sys", false)) {
+          sys.putString("wifi_ssid", ssid.c_str());
+          sys.putString("wifi_pass", sep + 1);
+          sys.end();
+          LogLine("[I] ", "wifi credentials saved for '" + ssid +
+                              "'; apps join on their next Connect()");
+        } else {
+          Serial.println("[E] could not open NVS to save wifi credentials");
+        }
+      }
+    } else if (strcmp(line, "SHOW") == 0) {
+      g_touch_echo = true;
+      DrawTestPattern();
+    } else if (strcmp(line, "SAVE") == 0) {
+      SaveOrientation();
+    } else if (strcmp(line, "INFO") == 0) {
+      PrintOrientation();
+    } else if (strcmp(line, "SCAN") == 0) {
+      Serial.println("[I] scanning (the radio is 2.4GHz-only; 5GHz networks are invisible)...");
+      WiFi.mode(WIFI_STA);
+      WiFi.disconnect();  // an in-progress connect attempt makes scans return nothing
+      delay(150);
+      int found = WiFi.scanNetworks();
+      for (int i = 0; i < found; ++i) {
+        char row[96];
+        snprintf(row, sizeof(row), "[I]   '%s'  ch%d  %ddBm  %s",
+                 WiFi.SSID(i).c_str(), WiFi.channel(i), (int)WiFi.RSSI(i),
+                 WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "secured");
+        Serial.println(row);
+      }
+      if (found <= 0) Serial.println("[W]   no networks visible");
+      WiFi.scanDelete();
+    } else {
+      Serial.println(
+          "[W] commands: SHOW | L | R | M | F | C | SAVE | INFO | "
+          "WIFI <ssid>|<pass> | SCAN | MADCTL <hex> | OFFSET <c> <r> | "
+          "TOUCHMAP <s> <ix> <iy>");
+      Serial.println(
+          "[W] procedure: SHOW, L until upright, M if mirrored, "
+          "C if RED shows blue, then SAVE");
+    }
+  }
+}
+
 }  // namespace
 
 // ===========================================================================
@@ -199,8 +439,13 @@ void RuntimeInit() {
   delay(50);
   Serial.println("[I] cheeko runtime " CHEEKO_SDK_VERSION_STRING " starting");
 
+  // Per-unit panel orientation from NVS must be loaded before the panel
+  // is initialised (lcdInit writes MADCTL).
+  LoadOrientation();
+
   cheeko_hw::busInit();
   cheeko_hw::lcdInit();
+  Serial.println("[I] wrong screen orientation? type SHOW in the serial monitor");
 
   // Buttons (SKILL.md Gotcha 4: the middle/power key is active HIGH with an
   // external pulldown; the others are active LOW with internal pullups).
@@ -227,6 +472,7 @@ void RuntimeAttachApp(cheeko::CheekoApp *app) {
 
 void RuntimePoll() {
   uint32_t now = millis();
+  PollSerialTuning();  // always live, in every app (SKILL.md section 10)
   PollTouch();
   PollButtons();
   PollMotion(now);
@@ -243,9 +489,14 @@ namespace cheeko {
 
 // ---- Display --------------------------------------------------------------
 
+int Display::Width() { return cheeko_hw::lcdWidth(); }
+
+int Display::Height() { return cheeko_hw::lcdHeight(); }
+
 void Display::Clear(uint32_t rgb) {
   g_bg_rgb = rgb;
-  cheeko_hw::lcdFillRect(0, 0, LCD_WIDTH, LCD_HEIGHT, To565(rgb));
+  cheeko_hw::lcdFillRect(0, 0, cheeko_hw::lcdWidth(), cheeko_hw::lcdHeight(),
+                         To565(rgb));
 }
 
 void Display::Text(int x, int y, const std::string &text) {
@@ -256,8 +507,8 @@ void Display::Text(int x, int y, const std::string &text) {
   const uint16_t bg = To565(g_bg_rgb);
   int cx = x;
   for (size_t i = 0; i < text.size(); ++i) {
-    if (cx >= 0 && cx + kGlyphCellW <= LCD_WIDTH && y >= 0 &&
-        y + kGlyphCellH <= LCD_HEIGHT) {
+    if (cx >= 0 && cx + kGlyphCellW <= cheeko_hw::lcdWidth() && y >= 0 &&
+        y + kGlyphCellH <= cheeko_hw::lcdHeight()) {
       DrawGlyph2x(cx, y, text[i], fg, bg);
     }
     cx += kGlyphCellW;  // 12px advance
@@ -266,7 +517,7 @@ void Display::Text(int x, int y, const std::string &text) {
 
 void Display::CenterText(int y, const std::string &text) {
   int w = (int)text.size() * kGlyphCellW;
-  int x = (LCD_WIDTH - w) / 2;
+  int x = (cheeko_hw::lcdWidth() - w) / 2;
   if (x < 0) x = 0;
   Text(x, y, text);
 }
@@ -366,6 +617,30 @@ void Speaker::Tone(int frequency_hz, int duration_ms) {
   cheeko_hw::ampSet(true);  // amp on only while playing
   cheeko_hw::audioPlaySquare((float)frequency_hz, duration_ms, amplitude);
   delay(kAmpTailMs);        // let the DMA buffers drain before cutting power
+  cheeko_hw::ampSet(false);
+}
+
+void Speaker::PlayPcm(const int16_t *samples, size_t sample_count,
+                      int sample_rate_hz) {
+  if (!g_audio_ok || samples == nullptr || sample_count == 0 || g_volume <= 0) {
+    return;
+  }
+  if (sample_rate_hz != (int)AUDIO_SAMPLE_RATE) {
+    LogLine("[W] ", "PlayPcm: clip rate differs from the I2S rate; pitch will shift");
+  }
+  cheeko_hw::ampSet(true);
+  int16_t frame[64 * 2];
+  size_t written = 0;
+  for (size_t off = 0; off < sample_count; off += 64) {
+    const size_t n = sample_count - off < 64 ? sample_count - off : 64;
+    for (size_t i = 0; i < n; ++i) {
+      const int32_t s = (int32_t)samples[off + i] * g_volume / 100;
+      frame[i * 2] = (int16_t)s;      // duplicate mono -> stereo frames
+      frame[i * 2 + 1] = (int16_t)s;
+    }
+    i2s_write(I2S_NUM_0, frame, n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+  }
+  delay(kAmpTailMs);
   cheeko_hw::ampSet(false);
 }
 
@@ -475,13 +750,24 @@ void Cloud::SendText(const std::string &text) {
   DispatchCloudText("voice sessions require the Cheeko cloud service");
 }
 
+// https:// URLs need a TLS transport. Certificate validation is skipped (no
+// CA store in runtime v1) — fine for a dev toy, not for anything sensitive.
+bool BeginRequest(HTTPClient &http, const std::string &url) {
+  static WiFiClientSecure tls;
+  if (url.compare(0, 8, "https://") == 0) {
+    tls.setInsecure();
+    return http.begin(tls, String(url.c_str()));
+  }
+  return http.begin(String(url.c_str()));
+}
+
 void Cloud::GetJson(const std::string &url) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[W] Cloud::GetJson: Wi-Fi not connected");
     return;
   }
   HTTPClient http;
-  if (!http.begin(String(url.c_str()))) {
+  if (!BeginRequest(http, url)) {
     LogLine("[E] ", "Cloud::GetJson: bad URL: " + url);
     return;
   }
@@ -504,7 +790,7 @@ void Cloud::PostJson(const std::string &url, const std::string &json) {
     return;
   }
   HTTPClient http;
-  if (!http.begin(String(url.c_str()))) {
+  if (!BeginRequest(http, url)) {
     LogLine("[E] ", "Cloud::PostJson: bad URL: " + url);
     return;
   }
@@ -543,15 +829,28 @@ void Wifi::Connect() {
   Serial.print("[I] Wifi::Connect: joining ");
   Serial.println(ssid.c_str());
   WiFi.mode(WIFI_STA);
+  static bool reason_hooked = false;
+  if (!reason_hooked) {
+    reason_hooked = true;
+    // Reason codes: 201 = no AP found (wrong SSID, or a 5GHz-only network this
+    // 2.4GHz radio cannot see), 15/202/205 = bad password / auth failure.
+    WiFi.onEvent(
+        [](WiFiEvent_t, WiFiEventInfo_t info) {
+          Serial.print("[W] Wifi: disconnected, reason=");
+          Serial.println((int)info.wifi_sta_disconnected.reason);
+        },
+        ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  }
   WiFi.begin(ssid.c_str(), pass.c_str());
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
     delay(100);  // bounded wait: 8s, then give up without blocking the app
   }
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("[I] Wifi::Connect: connected");
+    Serial.print("[I] Wifi::Connect: connected, ip=");
+    Serial.println(WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("[W] Wifi::Connect: timed out after 8s");
+    Serial.println("[W] Wifi::Connect: timed out after 8s (SCAN lists visible networks)");
   }
 }
 

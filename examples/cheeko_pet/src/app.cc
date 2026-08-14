@@ -65,8 +65,12 @@ class CheekoPetApp : public CheekoApp {
     return PetState::Neutral;
   }
 
+  // Laid out around the screen center so it fits portrait (240x296) and
+  // landscape-mounted (296x240) units alike.
   void DrawFace(bool blink) {
     auto& display = Cheeko().display();
+    const int cx = display.Width() / 2;
+    const int cy = display.Height() / 2 - 20;
     const PetState state = State();
     const uint32_t bg = state == PetState::Sleepy ? 0x0b0f1c : 0x101820;
     const uint32_t body = state == PetState::Happy
@@ -74,58 +78,60 @@ class CheekoPetApp : public CheekoApp {
                               : state == PetState::Neutral ? Color::Orange
                                                            : 0x8a93b8;
     display.Clear(bg);
-    display.FillCircle(120, 128, 78, body);
-    display.FillCircle(86, 116, 34, Color::White);
-    display.FillCircle(154, 116, 34, Color::White);
+    display.FillCircle(cx, cy, 78, body);
+    display.FillCircle(cx - 34, cy - 12, 34, Color::White);
+    display.FillCircle(cx + 34, cy - 12, 34, Color::White);
 
     if (state == PetState::Sleepy) {
-      display.Line(72, 114, 100, 114, Color::Black);
-      display.Line(140, 114, 168, 114, Color::Black);
-      display.Text(176, 56, "zzz");
+      display.Line(cx - 48, cy - 14, cx - 20, cy - 14, Color::Black);
+      display.Line(cx + 20, cy - 14, cx + 48, cy - 14, Color::Black);
+      display.Text(cx + 56, cy - 72, "zzz");
     } else if (blink) {
-      display.Line(74, 114, 98, 114, Color::Black);
-      display.Line(142, 114, 166, 114, Color::Black);
+      display.Line(cx - 46, cy - 14, cx - 22, cy - 14, Color::Black);
+      display.Line(cx + 22, cy - 14, cx + 46, cy - 14, Color::Black);
     } else {
-      display.FillCircle(86, 114, 9, Color::Black);
-      display.FillCircle(154, 114, 9, Color::Black);
-      display.FillCircle(90, 110, 3, Color::White);
-      display.FillCircle(158, 110, 3, Color::White);
+      display.FillCircle(cx - 34, cy - 14, 9, Color::Black);
+      display.FillCircle(cx + 34, cy - 14, 9, Color::Black);
+      display.FillCircle(cx - 30, cy - 18, 3, Color::White);
+      display.FillCircle(cx + 38, cy - 18, 3, Color::White);
     }
 
     if (state == PetState::Happy) {
-      display.FillCircle(78, 156, 8, Color::Pink);
-      display.FillCircle(162, 156, 8, Color::Pink);
-      display.Line(104, 170, 120, 182, Color::Black);
-      display.Line(120, 182, 136, 170, Color::Black);
+      display.FillCircle(cx - 42, cy + 28, 8, Color::Pink);
+      display.FillCircle(cx + 42, cy + 28, 8, Color::Pink);
+      display.Line(cx - 16, cy + 42, cx, cy + 54, Color::Black);
+      display.Line(cx, cy + 54, cx + 16, cy + 42, Color::Black);
     } else if (state == PetState::Neutral) {
-      display.Line(106, 176, 134, 176, Color::Black);
+      display.Line(cx - 14, cy + 48, cx + 14, cy + 48, Color::Black);
     } else {
-      display.FillCircle(120, 180, 6, Color::Black);
+      display.FillCircle(cx, cy + 52, 6, Color::Black);
     }
 
-    display.CenterText(240, StateLabel(state));
-    display.CenterText(268, "tap:feed shake:play");
+    display.CenterText(display.Height() - 56, StateLabel(state));
+    display.CenterText(display.Height() - 28, "tap:feed shake:play");
   }
 
   void DrawStats() {
     auto& display = Cheeko().display();
+    const int x0 = (display.Width() - 192) / 2;
     display.Clear(0x101820);
     display.CenterText(32, "Cheeko Stats");
     DrawBar(84, "mood", mood_, Color::Mint);
     DrawBar(148, "energy", energy_, Color::Amber);
-    display.Text(24, 202, "stars: " + std::to_string(stars_));
+    display.Text(x0, 202, "stars: " + std::to_string(stars_));
     for (int i = 0; i < stars_ && i < 8; ++i) {
-      display.FillCircle(124 + i * 14, 208, 5, Color::Amber);
+      display.FillCircle(x0 + 100 + i * 14, 208, 5, Color::Amber);
     }
-    display.CenterText(268, "volume: back to face");
+    display.CenterText(display.Height() - 28, "volume: back to face");
   }
 
   void DrawBar(int y, const std::string& label, int value, uint32_t rgb) {
     auto& display = Cheeko().display();
-    display.Text(24, y - 20, label);
-    display.Rect(24, y, 192, 18, Color::Ink);
+    const int x0 = (display.Width() - 192) / 2;
+    display.Text(x0, y - 20, label);
+    display.Rect(x0, y, 192, 18, Color::Ink);
     if (value > 0) {
-      display.FillRect(26, y + 2, value * 188 / 100, 14, rgb);
+      display.FillRect(x0 + 2, y + 2, value * 188 / 100, 14, rgb);
     }
   }
 

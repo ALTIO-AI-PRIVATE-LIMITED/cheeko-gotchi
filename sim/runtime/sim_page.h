@@ -153,6 +153,24 @@ async function pollEvents() {
       if (!line) continue;
       const p = line.split(" ");
       if (p[0] === "tone") { volume = +p[3]; beep(+p[1], +p[2]); }
+      else if (p[0] === "pcm") {
+        if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+        const bin = atob(p[1]);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        audio.decodeAudioData(bytes.buffer).then(buf => {
+          const src = audio.createBufferSource(), g = audio.createGain();
+          g.gain.value = Math.max(0.05, volume / 100);
+          src.buffer = buf; src.connect(g); g.connect(audio.destination);
+          src.start();
+        });
+      }
+      else if (p[0] === "say" && window.speechSynthesis) {
+        const u = new SpeechSynthesisUtterance(b64dec(p[1]));
+        u.volume = Math.max(0.05, volume / 100);
+        u.rate = 1.05;
+        speechSynthesis.speak(u);
+      }
       else if (p[0] === "log") addLine(logEl, "[" + p[1] + "] " + b64dec(p[2]), p[1]);
       else if (p[0] === "sent") {
         const msg = b64dec(p[1]);

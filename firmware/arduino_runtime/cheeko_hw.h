@@ -81,10 +81,32 @@ bool i2cReadRegs(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len);
 // SPI (display) + Wire (touch/codec/accel) at the verified speeds.
 void busInit();
 
-// ---- Display (ST7789-class, portrait 240x296, MADCTL 0x40, INVOFF) -----
+// ---- Display (ST7789-class, portrait 240x296, INVOFF) -------------------
+// Panel orientation is PER-UNIT: SKILL.md's reference unit wants MADCTL 0x40,
+// but other panel batches are mounted rotated/mirrored. The runtime loads the
+// unit's values from NVS (namespace "cheeko_sys") and they can be tuned live
+// over serial (MADCTL/OFFSET/SAVE commands) without reflashing.
+extern uint8_t g_madctl;      // current MADCTL (0x36) value
+extern int g_caset_offset;    // added to CASET range (GRAM column offset)
+extern int g_raset_offset;    // added to RASET range (GRAM row offset)
+// Touch post-transform applied after the SKILL.md calibration mapping, so a
+// rotated panel's touch tracks the rotated display. Tuned via TOUCHMAP.
+extern bool g_touch_swap_xy;
+extern bool g_touch_invert_x;
+extern bool g_touch_invert_y;
+
 void lcdWriteCommand(uint8_t cmd);
 void lcdWriteData(uint8_t data);
 void lcdInit();
+void lcdClearGram();               // raw wipe of the full 240x320 GRAM
+void lcdSetMadctl(uint8_t value);  // writes 0x36, updates g_madctl, wipes GRAM
+bool lcdSwapped();                 // MV bit set: logical canvas is landscape
+// Logical canvas size. Follows the MV bit: 240x296 portrait normally,
+// 296x240 landscape when the panel mapping is rotated. Landscape-mounted
+// units (they exist) become full-screen landscape simply by rotating with
+// the L/R serial commands; apps read the shape via display().Width()/Height().
+int lcdWidth();
+int lcdHeight();
 void lcdSetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 // Clipped solid fill; the workhorse for all drawing primitives.
 void lcdFillRect(int x, int y, int w, int h, uint16_t color);

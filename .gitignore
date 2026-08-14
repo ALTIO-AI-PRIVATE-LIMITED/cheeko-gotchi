@@ -18,6 +18,7 @@ sdkconfig.old
 .DS_Store
 *.swp
 *~
+.vscode/
 
 # --- Local tooling / generated output ---
 .claude/

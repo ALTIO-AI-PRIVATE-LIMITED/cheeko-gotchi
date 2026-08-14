@@ -127,12 +127,34 @@ class Preferences {
 
 #define WIFI_STA 1
 #define WL_CONNECTED 3
+#define WIFI_AUTH_OPEN 0
+
+enum WiFiEvent_t { ARDUINO_EVENT_WIFI_STA_DISCONNECTED = 21 };
+struct WiFiEventInfo_t {
+  struct { unsigned char reason; } wifi_sta_disconnected;
+};
+
+class IPAddress {
+ public:
+  String toString() const { return String("0.0.0.0"); }
+};
 
 class WiFiClass {
  public:
   void mode(int m) { (void)m; }
   void begin(const char* ssid, const char* pass) { (void)ssid; (void)pass; }
   int status() { return 0; }
+  void disconnect() {}
+  int scanNetworks() { return 0; }
+  String SSID(int i) { (void)i; return String(); }
+  int channel(int i) { (void)i; return 0; }
+  int RSSI(int i) { (void)i; return 0; }
+  int encryptionType(int i) { (void)i; return 0; }
+  void scanDelete() {}
+  void onEvent(void (*cb)(WiFiEvent_t, WiFiEventInfo_t), WiFiEvent_t event) {
+    (void)cb; (void)event;
+  }
+  IPAddress localIP() { return IPAddress(); }
 };
 static WiFiClass WiFi;
 
@@ -140,9 +162,17 @@ static WiFiClass WiFi;
 // HTTPClient
 // ---------------------------------------------------------------------------
 
+class WiFiClientSecure {
+ public:
+  void setInsecure() {}
+};
+
 class HTTPClient {
  public:
   bool begin(String url) { (void)url; return true; }
+  bool begin(WiFiClientSecure& client, String url) {
+    (void)client; (void)url; return true;
+  }
   void addHeader(const String& name, const String& value) {
     (void)name; (void)value;
   }

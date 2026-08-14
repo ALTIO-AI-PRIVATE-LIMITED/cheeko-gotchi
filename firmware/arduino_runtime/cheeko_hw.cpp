@@ -50,6 +50,16 @@ void busInit() {
 // Display (SKILL.md section 4)
 // ===========================================================================
 
+// Per-unit orientation state. Defaults are the SKILL.md reference unit's
+// values; the runtime overrides them from NVS at boot (see cheeko_runtime.cpp)
+// and the serial MADCTL/OFFSET/TOUCHMAP commands tune them live.
+uint8_t g_madctl = 0x40;
+int g_caset_offset = 0;
+int g_raset_offset = 0;
+bool g_touch_swap_xy = false;
+bool g_touch_invert_x = false;
+bool g_touch_invert_y = false;
+
 void lcdWriteCommand(uint8_t cmd) {
   digitalWrite(PIN_LCD_DC, LOW);
   digitalWrite(PIN_LCD_CS, LOW);
@@ -64,9 +74,48 @@ void lcdWriteData(uint8_t data) {
   digitalWrite(PIN_LCD_CS, HIGH);
 }
 
-// Verified init sequence: SWRESET, SLPOUT, MADCTL=0x40 (MX only, RGB order,
-// portrait 240x296), COLMOD=RGB565, INVOFF (this panel does NOT want
-// inversion), NORON, DISPON.
+// Wipe the controller's ENTIRE GRAM (ST7789: 240x320 — larger than the
+// visible 296 rows), bypassing logical swapping and offsets. Orientation and
+// offset changes remap which GRAM region is visible, so clearing only the
+// logical canvas would leave stale pixels from the previous mapping showing.
+void lcdClearGram() {
+  const int cmax = lcdSwapped() ? 319 : 239;
+  const int rmax = lcdSwapped() ? 239 : 319;
+  lcdWriteCommand(0x2a);
+  lcdWriteData(0); lcdWriteData(0);
+  lcdWriteData(cmax >> 8); lcdWriteData(cmax & 0xff);
+  lcdWriteCommand(0x2b);
+  lcdWriteData(0); lcdWriteData(0);
+  lcdWriteData(rmax >> 8); lcdWriteData(rmax & 0xff);
+  lcdWriteCommand(0x2c);
+
+  static uint8_t zeros[512] = {0};
+  digitalWrite(PIN_LCD_DC, HIGH);
+  digitalWrite(PIN_LCD_CS, LOW);
+  long remaining = 240L * 320L * 2L;
+  while (remaining > 0) {
+    long n = remaining < (long)sizeof(zeros) ? remaining : (long)sizeof(zeros);
+    SPI.writeBytes(zeros, (size_t)n);
+    remaining -= n;
+  }
+  digitalWrite(PIN_LCD_CS, HIGH);
+}
+
+void lcdSetMadctl(uint8_t value) {
+  g_madctl = value;
+  lcdWriteCommand(0x36);
+  lcdWriteData(value);
+  lcdClearGram();  // the old mapping's pixels must never bleed through
+}
+
+bool lcdSwapped() { return (g_madctl & 0x20) != 0; }  // MV bit
+
+int lcdWidth() { return lcdSwapped() ? LCD_HEIGHT : LCD_WIDTH; }
+int lcdHeight() { return lcdSwapped() ? LCD_WIDTH : LCD_HEIGHT; }
+
+// Verified init sequence: SWRESET, SLPOUT, MADCTL (0x40 on the reference
+// unit; per-unit value from NVS), COLMOD=RGB565, INVOFF (this panel does NOT
+// want inversion), NORON, DISPON.
 void lcdInit() {
   pinMode(PIN_LCD_CS, OUTPUT);
   pinMode(PIN_LCD_DC, OUTPUT);
@@ -80,20 +129,30 @@ void lcdInit() {
 
   lcdWriteCommand(0x01); delay(150);   // SWRESET
   lcdWriteCommand(0x11); delay(120);   // SLPOUT
-  lcdWriteCommand(0x36); lcdWriteData(0x40);  // MADCTL — portrait, see SKILL.md
+  lcdWriteCommand(0x36); lcdWriteData(g_madctl);  // MADCTL — per-unit
   lcdWriteCommand(0x3a); lcdWriteData(0x55);  // COLMOD = 16-bit RGB565
   lcdWriteCommand(0x20);               // INVOFF
   lcdWriteCommand(0x13);               // NORON
+  lcdClearGram();                      // no random-GRAM flash at power-on
   lcdWriteCommand(0x29);               // DISPON
 }
 
 void lcdSetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+  // Coordinates are in the CURRENT logical space (240x296 portrait, or
+  // 296x240 landscape when MV is set). The MV bit makes the controller
+  // itself exchange axes — with MV set its column counter walks the panel's
+  // long axis — so logical x always goes out as CASET and y as RASET, and
+  // pixel data is always streamed row-major. Never swap here.
+  int c0 = x0 + g_caset_offset, c1 = x1 + g_caset_offset;
+  int r0 = y0 + g_raset_offset, r1 = y1 + g_raset_offset;
+  if (c0 < 0) c0 = 0;
+  if (r0 < 0) r0 = 0;
   lcdWriteCommand(0x2a);                        // CASET (column address set)
-  lcdWriteData(x0 >> 8); lcdWriteData(x0 & 0xff);
-  lcdWriteData(x1 >> 8); lcdWriteData(x1 & 0xff);
+  lcdWriteData(c0 >> 8); lcdWriteData(c0 & 0xff);
+  lcdWriteData(c1 >> 8); lcdWriteData(c1 & 0xff);
   lcdWriteCommand(0x2b);                        // RASET (row address set)
-  lcdWriteData(y0 >> 8); lcdWriteData(y0 & 0xff);
-  lcdWriteData(y1 >> 8); lcdWriteData(y1 & 0xff);
+  lcdWriteData(r0 >> 8); lcdWriteData(r0 & 0xff);
+  lcdWriteData(r1 >> 8); lcdWriteData(r1 & 0xff);
   lcdWriteCommand(0x2c);                        // RAMWR — pixel data follows
 }
 
@@ -105,12 +164,12 @@ void lcdPushColors(const uint8_t *bytes, size_t len) {
 }
 
 void lcdFillRect(int x, int y, int w, int h, uint16_t color) {
-  // Clip to the panel first.
+  // Clip to the logical canvas (portrait or landscape) first.
   if (x < 0) { w += x; x = 0; }
   if (y < 0) { h += y; y = 0; }
-  if (x >= LCD_WIDTH || y >= LCD_HEIGHT) return;
-  if (x + w > LCD_WIDTH)  w = LCD_WIDTH - x;
-  if (y + h > LCD_HEIGHT) h = LCD_HEIGHT - y;
+  if (x >= lcdWidth() || y >= lcdHeight()) return;
+  if (x + w > lcdWidth())  w = lcdWidth() - x;
+  if (y + h > lcdHeight()) h = lcdHeight() - y;
   if (w <= 0 || h <= 0) return;
 
   lcdSetWindow((uint16_t)x, (uint16_t)y, (uint16_t)(x + w - 1), (uint16_t)(y + h - 1));
@@ -160,6 +219,19 @@ bool touchRead(int &x, int &y) {
   // raw X tracks screen Y inverted, each axis with its own scale/offset.
   x = constrain((rawY -  12) * 180 / 211 + 30, 0, LCD_WIDTH  - 1);
   y = constrain((260 - rawX) * 216 / 222 + 40, 0, LCD_HEIGHT - 1);
+  // Per-unit post-transform so touch follows a rotated/mirrored panel. The
+  // base mapping above is in portrait glass space; rescale onto the logical
+  // canvas (a no-op when the canvas is landscape, i.e. axes already match).
+  if (g_touch_swap_xy) {
+    int sx = x, sy = y;
+    x = sy * (lcdWidth() - 1) / (LCD_HEIGHT - 1);
+    y = sx * (lcdHeight() - 1) / (LCD_WIDTH - 1);
+  } else if (lcdSwapped()) {
+    x = x * (lcdWidth() - 1) / (LCD_WIDTH - 1);
+    y = y * (lcdHeight() - 1) / (LCD_HEIGHT - 1);
+  }
+  if (g_touch_invert_x) x = lcdWidth() - 1 - x;
+  if (g_touch_invert_y) y = lcdHeight() - 1 - y;
   return true;
 }
 
