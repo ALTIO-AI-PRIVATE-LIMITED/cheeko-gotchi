@@ -237,6 +237,10 @@ def assemble_device_sketch(app_dir, source):
     shutil.copyfile(ROOT / "sdk" / "runtime" / "cheeko_font.h", sketch_dir / "cheeko_font.h")
     # The Arduino builder does not reliably compile .cc files in a sketch.
     shutil.copyfile(source, sketch_dir / "app.cpp")
+    # Bring along any generated asset headers etc. living next to app.cc.
+    for extra in sorted(source.parent.glob("*")):
+        if extra.is_file() and extra.name != "app.cc":
+            shutil.copyfile(extra, sketch_dir / extra.name)
     return sketch_dir
 
 
