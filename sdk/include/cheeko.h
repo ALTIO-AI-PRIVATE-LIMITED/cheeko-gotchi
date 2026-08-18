@@ -24,9 +24,9 @@
 // same string so a device can refuse an app built against an incompatible SDK.
 // ---------------------------------------------------------------------------
 #define CHEEKO_SDK_VERSION_MAJOR 0
-#define CHEEKO_SDK_VERSION_MINOR 1
+#define CHEEKO_SDK_VERSION_MINOR 2
 #define CHEEKO_SDK_VERSION_PATCH 0
-#define CHEEKO_SDK_VERSION_STRING "0.1.0"
+#define CHEEKO_SDK_VERSION_STRING "0.2.0"
 
 namespace cheeko {
 
@@ -159,10 +159,24 @@ class Cloud {  // [Stable]
   void PostJson(const std::string& url, const std::string& json);
 };
 
+// A nearby access point from Wifi::Scan(). The board's radio is 2.4GHz-only,
+// so every network it can see is one it can actually join. [Experimental]
+struct WifiNetwork {
+  std::string ssid;
+  int rssi = 0;         // signal strength in dBm (closer to 0 = stronger)
+  bool secured = true;  // false = open network, joins without a password
+};
+
 class Wifi {  // [Stable]
  public:
   void Connect();
   bool IsConnected() const;
+  // On-device provisioning. Scan blocks for a few seconds, drops any current
+  // connection, and fills `out` with up to `max_count` visible networks (no
+  // particular order); returns the count. SetCredentials persists the pair
+  // (survives reboot and OTA) and immediately tries to join. [Experimental]
+  int Scan(WifiNetwork* out, int max_count);
+  void SetCredentials(const std::string& ssid, const std::string& password);
 };
 
 // ===========================================================================

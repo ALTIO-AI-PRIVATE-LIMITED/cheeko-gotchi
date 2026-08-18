@@ -269,7 +269,14 @@ bool audioInit() {
 
   // ES8311 DAC-only register sequence for 16-bit / 16kHz / 4.096MHz MCLK,
   // derived from Espressif's ES8311 component (SKILL.md section 6).
-  if (!i2cWriteReg(ES8311_ADDR, 0x00, 0x1f)) return false;  // codec absent?
+  // The codec can NACK this first write if probed too soon after power-up,
+  // so retry briefly rather than reporting the codec absent.
+  bool probed = false;
+  for (int attempt = 0; attempt < 5 && !probed; ++attempt) {
+    if (attempt) delay(60);
+    probed = i2cWriteReg(ES8311_ADDR, 0x00, 0x1f);
+  }
+  if (!probed) return false;  // codec really absent / bus fault
   delay(20);
   i2cWriteReg(ES8311_ADDR, 0x00, 0x00);
   i2cWriteReg(ES8311_ADDR, 0x00, 0x80);

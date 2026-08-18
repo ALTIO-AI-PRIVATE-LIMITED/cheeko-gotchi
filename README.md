@@ -22,7 +22,8 @@ CHEEKO_APP(MyApp);
 ```
 
 The public API is a single header — [`sdk/include/cheeko.h`](sdk/include/cheeko.h),
-locked at **v0.1.0**. The full contract is in
+at **v0.2.0** (stable surface frozen since 0.1.0; experimental additions may
+still evolve). The full contract is in
 [`docs/sdk/api-reference.md`](docs/sdk/api-reference.md).
 
 ## Quick Start

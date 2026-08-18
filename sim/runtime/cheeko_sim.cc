@@ -485,6 +485,34 @@ void Wifi::Connect() {
 
 bool Wifi::IsConnected() const { return true; }
 
+int Wifi::Scan(WifiNetwork* out, int max_count) {
+  static const struct {
+    const char* ssid;
+    int rssi;
+    bool secured;
+  } kFakeNetworks[] = {
+      {"CheekoNet", -46, true},
+      {"Home-2.4G", -58, true},
+      {"CafeGuest", -71, false},
+      {"NextDoor", -84, true},
+  };
+  int count = 0;
+  for (const auto& fake : kFakeNetworks) {
+    if (count >= max_count) break;
+    out[count].ssid = fake.ssid;
+    out[count].rssi = fake.rssi;
+    out[count].secured = fake.secured;
+    ++count;
+  }
+  Cheeko().log().Info("wifi scan (simulated): " + std::to_string(count) +
+                      " networks");
+  return count;
+}
+
+void Wifi::SetCredentials(const std::string& ssid, const std::string&) {
+  Cheeko().log().Info("wifi credentials saved (simulated) for '" + ssid + "'");
+}
+
 CheekoRuntime& Cheeko() {
   static CheekoRuntime runtime;
   return runtime;

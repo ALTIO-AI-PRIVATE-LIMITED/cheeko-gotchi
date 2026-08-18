@@ -45,6 +45,8 @@ uint32_t g_bg_rgb = 0x000000;
 TouchEvent g_touch;
 // Print mapped touch coords on each press (enabled by serial tuning commands).
 bool g_touch_echo = false;
+// DEBUG serial command: log touch/button/shake events as they dispatch.
+bool g_debug_input = false;
 
 // Buttons: pin, SDK id, polarity, last state.
 struct ButtonState {
@@ -74,6 +76,28 @@ int g_volume = 60;  // 0..100
 constexpr int kMaxToneAmplitude = 26000;
 constexpr int kAmpTailMs = 40;  // let I2S DMA drain before cutting the amp
 
+// Amp lifecycle. The NS4150B class-D amp has a soft-start of several ms that
+// swallows the front of whatever plays right after enabling it — long alarm
+// tones shrug that off, but short clock-tick clicks vanish entirely. So the
+// amp is pre-warmed before a cold start, kept on for a hangover window after
+// each sound (rapid sequences then hold it open continuously), and only cut
+// by RuntimePoll() once audio has been quiet for a while.
+bool g_amp_on = false;
+uint32_t g_amp_off_ms = 0;
+constexpr uint32_t kAmpHangoverMs = 600;
+
+void AmpWarm() {
+  if (!g_amp_on) {
+    cheeko_hw::ampSet(true);
+    g_amp_on = true;
+    delay(12);  // soft-start; without this the first ~10ms of audio is lost
+  }
+}
+
+void AmpRelease() {  // called right after playback finishes queueing
+  g_amp_off_ms = millis() + kAmpTailMs + kAmpHangoverMs;
+}
+
 // Storage (NVS via Preferences).
 Preferences g_prefs;
 bool g_prefs_ok = false;
@@ -87,9 +111,55 @@ uint16_t To565(uint32_t rgb) {
                     ((rgb >> 3) & 0x001f));
 }
 
+// Every log line carries the device uptime, so spacing and ordering stay
+// readable when scrolling back through a monitor session.
 void LogLine(const char *prefix, const std::string &message) {
+  char stamp[16];
+  const unsigned s = (unsigned)(millis() / 1000u);
+  snprintf(stamp, sizeof(stamp), "%02u:%02u:%02u ", s / 3600u, (s / 60u) % 60u,
+           s % 60u);
   Serial.print(prefix);
+  Serial.print(stamp);
   Serial.println(message.c_str());
+}
+
+// "https://ntfy.sh/topic/json?poll=1" -> "ntfy.sh/topic" — identifies the
+// endpoint without drowning the console in query strings.
+std::string UrlBrief(const std::string &url) {
+  size_t start = url.find("://");
+  start = start == std::string::npos ? 0 : start + 3;
+  std::string brief = url.substr(start);
+  const size_t query = brief.find('?');
+  if (query != std::string::npos) brief = brief.substr(0, query);
+  if (brief.size() > 40) brief = brief.substr(0, 40) + "...";
+  return brief;
+}
+
+// Fetch logging with the no-news case de-duplicated: polling loops that get
+// HTTP 200 with an empty body forever say nothing new, so those are counted
+// silently and summarised once a minute. Anything notable (an error status
+// or an actual payload) prints immediately.
+void LogFetch(const char *verb, const std::string &url, int code, int bytes,
+              uint32_t took_ms) {
+  static uint32_t quiet_polls = 0;
+  static uint32_t last_summary_ms = 0;
+  if (code == 200 && bytes == 0) {
+    ++quiet_polls;
+    if (millis() - last_summary_ms >= 60000u) {
+      LogLine("[I] ", std::string(verb) + " " + UrlBrief(url) + ": " +
+                          std::to_string(quiet_polls) +
+                          " polls ok, no new data (last minute)");
+      quiet_polls = 0;
+      last_summary_ms = millis();
+    }
+    return;
+  }
+  LogLine(code == 200 ? "[I] " : "[W] ",
+          std::string(verb) + " " + UrlBrief(url) + " -> HTTP " +
+              std::to_string(code) + ", " + std::to_string(bytes) + "B in " +
+              std::to_string(took_ms) + "ms");
+  quiet_polls = 0;
+  last_summary_ms = millis();
 }
 
 void DispatchCloudText(const std::string &text) {
@@ -141,15 +211,20 @@ void PollTouch() {
     g_touch.x = x;
     g_touch.y = y;
     g_touch.pressed = true;
-    if (!was_pressed && g_touch_echo) {
-      char line[40];
-      snprintf(line, sizeof(line), "[I] touch x=%d y=%d", x, y);
-      Serial.println(line);
+    if (!was_pressed && (g_touch_echo || g_debug_input)) {
+      char line[48];
+      snprintf(line, sizeof(line), "touch down x=%d y=%d", x, y);
+      LogLine("[I] ", line);
     }
     // Press edge, plus movement while held.
     if ((!was_pressed || moved) && g_app) g_app->OnTouch(g_touch);
   } else if (g_touch.pressed) {
     g_touch.pressed = false;  // release edge at the last known position
+    if (g_debug_input) {
+      char line[48];
+      snprintf(line, sizeof(line), "touch up x=%d y=%d", g_touch.x, g_touch.y);
+      LogLine("[I] ", line);
+    }
     if (g_app) g_app->OnTouch(g_touch);
   }
 }
@@ -161,6 +236,11 @@ void PollButtons() {
     bool pressed = b.active_high ? (raw == HIGH) : (raw == LOW);
     if (pressed != b.pressed) {
       b.pressed = pressed;
+      if (g_debug_input) {
+        static const char *kNames[] = {"boot", "power", "vol+", "vol-"};
+        LogLine("[I] ", std::string("button ") + kNames[(int)b.id] +
+                            (pressed ? " down" : " up"));
+      }
       if (g_app) {
         ButtonEvent event;
         event.button = b.id;
@@ -188,6 +268,7 @@ void PollMotion(uint32_t now_ms) {
       (now_ms - g_last_shake_ms) > kShakeRefractoryMs) {
     g_last_shake_ms = now_ms;
     g_shake_latch = true;
+    if (g_debug_input) LogLine("[I] ", "shake detected");
     if (g_app) g_app->OnShake();
   }
 }
@@ -408,10 +489,37 @@ void PollSerialTuning() {
       }
       if (found <= 0) Serial.println("[W]   no networks visible");
       WiFi.scanDelete();
+    } else if (strcmp(line, "STATUS") == 0) {
+      char row[120];
+      const unsigned s = (unsigned)(millis() / 1000u);
+      snprintf(row, sizeof(row),
+               "uptime %02u:%02u:%02u | heap %uKB free (min %uKB)", s / 3600u,
+               (s / 60u) % 60u, s % 60u,
+               (unsigned)(ESP.getFreeHeap() / 1024u),
+               (unsigned)(ESP.getMinFreeHeap() / 1024u));
+      LogLine("[I] ", row);
+      if (WiFi.status() == WL_CONNECTED) {
+        snprintf(row, sizeof(row), "wifi '%s' | ip %s | %ddBm",
+                 WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(),
+                 (int)WiFi.RSSI());
+        LogLine("[I] ", row);
+      } else {
+        LogLine("[W] ", "wifi not connected");
+      }
+      snprintf(row, sizeof(row),
+               "audio %s | accel %s | storage %s | input debug %s",
+               g_audio_ok ? "ok" : "DOWN", g_accel_ok ? "ok" : "DOWN",
+               g_prefs_ok ? "ok" : "DOWN", g_debug_input ? "on" : "off");
+      LogLine("[I] ", row);
+    } else if (strcmp(line, "DEBUG") == 0) {
+      g_debug_input = !g_debug_input;
+      LogLine("[I] ", std::string("input debug ") +
+                          (g_debug_input ? "on (touch/buttons/shake will log)"
+                                         : "off"));
     } else {
       Serial.println(
-          "[W] commands: SHOW | L | R | M | F | C | SAVE | INFO | "
-          "WIFI <ssid>|<pass> | SCAN | MADCTL <hex> | OFFSET <c> <r> | "
+          "[W] commands: STATUS | DEBUG | SHOW | L | R | M | F | C | SAVE | "
+          "INFO | WIFI <ssid>|<pass> | SCAN | MADCTL <hex> | OFFSET <c> <r> | "
           "TOUCHMAP <s> <ix> <iy>");
       Serial.println(
           "[W] procedure: SHOW, L until upright, M if mirrored, "
@@ -476,6 +584,11 @@ void RuntimePoll() {
   PollTouch();
   PollButtons();
   PollMotion(now);
+  if (g_amp_on && g_amp_off_ms != 0 && now >= g_amp_off_ms) {
+    g_amp_off_ms = 0;   // audio has been quiet long enough; cut the amp
+    g_amp_on = false;
+    cheeko_hw::ampSet(false);
+  }
   if (g_app) g_app->OnTick(now);
 }
 
@@ -607,28 +720,42 @@ void Speaker::Play(const std::string &path) {
   LogLine("[W] ", "Speaker::Play not yet supported (upload PCM assets in v2): " + path);
 }
 
+// A failed boot-time init shouldn't mute the device forever (the codec can
+// NACK transiently); when sound is requested, re-attempt init at most once
+// every 5 seconds until it sticks.
+static bool AudioReady() {
+  static uint32_t retry_after_ms = 0;
+  if (g_audio_ok) return true;
+  if (millis() < retry_after_ms) return false;
+  retry_after_ms = millis() + 5000;
+  g_audio_ok = cheeko_hw::audioInit();
+  Serial.println(g_audio_ok ? "[I] audio recovered on re-init"
+                            : "[W] audio still down (ES8311 not responding)");
+  return g_audio_ok;
+}
+
 void Speaker::Tone(int frequency_hz, int duration_ms) {
-  if (!g_audio_ok) {
+  if (!AudioReady()) {
     Serial.println("[W] Tone ignored: audio init failed");
     return;
   }
   if (frequency_hz <= 0 || duration_ms <= 0 || g_volume <= 0) return;
   int amplitude = kMaxToneAmplitude * g_volume / 100;
-  cheeko_hw::ampSet(true);  // amp on only while playing
+  AmpWarm();
   cheeko_hw::audioPlaySquare((float)frequency_hz, duration_ms, amplitude);
-  delay(kAmpTailMs);        // let the DMA buffers drain before cutting power
-  cheeko_hw::ampSet(false);
+  AmpRelease();
 }
 
 void Speaker::PlayPcm(const int16_t *samples, size_t sample_count,
                       int sample_rate_hz) {
-  if (!g_audio_ok || samples == nullptr || sample_count == 0 || g_volume <= 0) {
+  if (samples == nullptr || sample_count == 0 || g_volume <= 0 ||
+      !AudioReady()) {
     return;
   }
   if (sample_rate_hz != (int)AUDIO_SAMPLE_RATE) {
     LogLine("[W] ", "PlayPcm: clip rate differs from the I2S rate; pitch will shift");
   }
-  cheeko_hw::ampSet(true);
+  AmpWarm();
   int16_t frame[64 * 2];
   size_t written = 0;
   for (size_t off = 0; off < sample_count; off += 64) {
@@ -640,8 +767,7 @@ void Speaker::PlayPcm(const int16_t *samples, size_t sample_count,
     }
     i2s_write(I2S_NUM_0, frame, n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
   }
-  delay(kAmpTailMs);
-  cheeko_hw::ampSet(false);
+  AmpRelease();
 }
 
 void Speaker::SetVolume(int volume) {
@@ -763,7 +889,13 @@ bool BeginRequest(HTTPClient &http, const std::string &url) {
 
 void Cloud::GetJson(const std::string &url) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[W] Cloud::GetJson: Wi-Fi not connected");
+    // Polling apps hit this every few seconds when Wi-Fi is down; once per
+    // half-minute is enough to say so.
+    static uint32_t last_warn_ms = 0;
+    if (last_warn_ms == 0 || millis() - last_warn_ms >= 30000u) {
+      last_warn_ms = millis();
+      LogLine("[W] ", "GET skipped: Wi-Fi not connected");
+    }
     return;
   }
   HTTPClient http;
@@ -771,15 +903,15 @@ void Cloud::GetJson(const std::string &url) {
     LogLine("[E] ", "Cloud::GetJson: bad URL: " + url);
     return;
   }
+  const uint32_t started_ms = millis();
   int code = http.GET();
   if (code > 0) {
     String body = http.getString();
-    Serial.print("[I] Cloud::GetJson HTTP ");
-    Serial.println(code);
+    LogFetch("GET", url, code, (int)body.length(), millis() - started_ms);
     DispatchCloudText(std::string(body.c_str()));
   } else {
-    Serial.print("[E] Cloud::GetJson failed, code ");
-    Serial.println(code);
+    LogLine("[E] ", "GET " + UrlBrief(url) + " failed, client error " +
+                        std::to_string(code));
   }
   http.end();
 }
@@ -795,15 +927,19 @@ void Cloud::PostJson(const std::string &url, const std::string &json) {
     return;
   }
   http.addHeader("Content-Type", "application/json");
+  const uint32_t started_ms = millis();
   int code = http.POST(String(json.c_str()));
   if (code > 0) {
     String body = http.getString();
-    Serial.print("[I] Cloud::PostJson HTTP ");
-    Serial.println(code);
+    // Posts are app-initiated actions, so they always log.
+    LogLine(code < 400 ? "[I] " : "[W] ",
+            "POST " + UrlBrief(url) + " -> HTTP " + std::to_string(code) +
+                ", " + std::to_string((int)body.length()) + "B in " +
+                std::to_string(millis() - started_ms) + "ms");
     DispatchCloudText(std::string(body.c_str()));
   } else {
-    Serial.print("[E] Cloud::PostJson failed, code ");
-    Serial.println(code);
+    LogLine("[E] ", "POST " + UrlBrief(url) + " failed, client error " +
+                        std::to_string(code));
   }
   http.end();
 }
@@ -855,6 +991,39 @@ void Wifi::Connect() {
 }
 
 bool Wifi::IsConnected() const { return WiFi.status() == WL_CONNECTED; }
+
+int Wifi::Scan(WifiNetwork *out, int max_count) {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();  // an in-progress connect attempt makes scans return nothing
+  delay(120);
+  const int found = WiFi.scanNetworks();
+  int count = 0;
+  for (int i = 0; i < found && count < max_count; ++i) {
+    if (WiFi.SSID(i).length() == 0) continue;  // skip hidden networks
+    out[count].ssid = WiFi.SSID(i).c_str();
+    out[count].rssi = (int)WiFi.RSSI(i);
+    out[count].secured = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    ++count;
+  }
+  WiFi.scanDelete();
+  Serial.printf("[I] Wifi::Scan: %d networks\n", count);
+  return count;
+}
+
+void Wifi::SetCredentials(const std::string &ssid, const std::string &password) {
+  Preferences sys;
+  if (sys.begin("cheeko_sys", false)) {
+    sys.putString("wifi_ssid", ssid.c_str());
+    sys.putString("wifi_pass", password.c_str());
+    sys.end();
+    Serial.print("[I] Wifi::SetCredentials: saved for '");
+    Serial.print(ssid.c_str());
+    Serial.println("'");
+  } else {
+    Serial.println("[E] Wifi::SetCredentials: could not open NVS");
+  }
+  Connect();  // join right away with the new credentials
+}
 
 // ---- Runtime singleton -----------------------------------------------------
 

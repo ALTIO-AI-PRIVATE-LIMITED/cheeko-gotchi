@@ -5,7 +5,7 @@ the base firmware owns all hardware. Low-level device details live in the board
 support package, not in your app.
 
 Header: [`sdk/include/cheeko.h`](../../sdk/include/cheeko.h)
-SDK version: **0.1.0** (`CHEEKO_SDK_VERSION_STRING`)
+SDK version: **0.2.0** (`CHEEKO_SDK_VERSION_STRING`)
 
 ---
 
@@ -156,6 +156,8 @@ Use this instead of `printf`. Lines surface on the USB serial console and in the
 | --- | --- |
 | `Connect()` | Join the provisioned network |
 | `IsConnected()` | Connection state |
+| `Scan(out, max_count)` | **[Experimental]** Fill `out` with visible networks (`WifiNetwork`: ssid/rssi/secured); blocks a few seconds and drops any current connection. The radio is 2.4 GHz-only, so everything listed is joinable |
+| `SetCredentials(ssid, password)` | **[Experimental]** Persist credentials (survives reboot and OTA) and join immediately — enables on-device provisioning UIs |
 
 ---
 

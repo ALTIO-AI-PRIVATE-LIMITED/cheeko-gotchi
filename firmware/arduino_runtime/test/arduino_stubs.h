@@ -147,8 +147,10 @@ class WiFiClass {
   void disconnect() {}
   int scanNetworks() { return 0; }
   String SSID(int i) { (void)i; return String(); }
+  String SSID() { return String(); }
   int channel(int i) { (void)i; return 0; }
   int RSSI(int i) { (void)i; return 0; }
+  int RSSI() { return 0; }
   int encryptionType(int i) { (void)i; return 0; }
   void scanDelete() {}
   void onEvent(void (*cb)(WiFiEvent_t, WiFiEventInfo_t), WiFiEvent_t event) {
@@ -157,6 +159,12 @@ class WiFiClass {
   IPAddress localIP() { return IPAddress(); }
 };
 static WiFiClass WiFi;
+
+struct EspClass {
+  unsigned getFreeHeap() { return 0; }
+  unsigned getMinFreeHeap() { return 0; }
+};
+static EspClass ESP;
 
 // ---------------------------------------------------------------------------
 // HTTPClient
