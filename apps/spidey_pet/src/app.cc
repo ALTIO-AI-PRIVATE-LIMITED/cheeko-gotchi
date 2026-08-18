@@ -83,16 +83,49 @@ class SpideyPetApp : public CheekoApp {
     }
   }
 
+  // Extract a JSON string field's value, handling the common escapes. Good
+  // enough for ntfy's single-line event objects; not a general JSON parser.
+  static std::string JsonField(const std::string& line, const char* key) {
+    const std::string needle = std::string("\"") + key + "\":\"";
+    const size_t start = line.find(needle);
+    if (start == std::string::npos) return "";
+    std::string out;
+    for (size_t i = start + needle.size(); i < line.size(); ++i) {
+      const char c = line[i];
+      if (c == '"') break;
+      if (c == '\\' && i + 1 < line.size()) {
+        const char esc = line[++i];
+        if (esc == 'n' || esc == 't') out += ' ';
+        else if (esc == 'u') { i += 4; out += '?'; }
+        else out += esc;  // covers \" \\ \/
+      } else {
+        out += c;
+      }
+    }
+    return out;
+  }
+
   void OnCloudText(const std::string& text) override {
     if (text.empty()) return;
     std::string note;
-    if (text.find("\"event\":\"message\"") != std::string::npos) {
-      size_t m = text.find("\"message\":\"");
-      if (m != std::string::npos) {
-        m += 11;
-        const size_t e = text.find('"', m);
-        if (e != std::string::npos) note = text.substr(m, e - m);
-      }
+    // A poll body is one JSON object per line; alert on the NEWEST message
+    // event. Phone notification forwarders often put the text in the ntfy
+    // "title" and send no body — ntfy then substitutes the placeholder
+    // "triggered" as the message — so read both fields and prefer real
+    // content over the placeholder.
+    const size_t last_event = text.rfind("\"event\":\"message\"");
+    if (last_event != std::string::npos) {
+      size_t line_start = text.rfind('\n', last_event);
+      line_start = line_start == std::string::npos ? 0 : line_start + 1;
+      size_t line_end = text.find('\n', last_event);
+      if (line_end == std::string::npos) line_end = text.size();
+      const std::string line = text.substr(line_start, line_end - line_start);
+      std::string message = JsonField(line, "message");
+      const std::string title = JsonField(line, "title");
+      if (message == "triggered" && !title.empty()) message.clear();
+      note = title.empty() ? message
+             : message.empty() ? title
+                               : title + ": " + message;
     } else if (text[0] != '{' && text[0] != '[' && text.size() < 200) {
       note = text;  // simulator cloud panel / plain-text pushes
     }
