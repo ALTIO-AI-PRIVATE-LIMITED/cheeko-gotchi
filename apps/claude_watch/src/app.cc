@@ -29,14 +29,13 @@ constexpr int kRingInner = 88;
 constexpr int kRingOuter = 101;
 constexpr int kTicks = 60;
 
-// Must match NTFY_TOPIC in host/claude_watch_host.py. Pick your own long
-// random name — anyone who knows the topic can read these counters.
-const char* const kNtfyTopic = "cheeko-claude-watch-x9m4rq72";
+// The host laptop serves stats on the LAN (claude_watch_host.py, port 8787).
+// Set your laptop's LAN IP here. For remote use, an ntfy poll URL also works
+// (the parser accepts ntfy's JSON format) — mind ntfy.sh's daily quotas.
+const char* const kStatsUrl = "http://192.168.1.4:8787/stats";
 
-// Polling is deliberately slow: ntfy.sh rate-limits per visitor IP, and
-// behind home NAT the device and the pushing laptop count as one visitor.
-constexpr uint32_t kPollIntervalMs = 20000;
-constexpr uint32_t kStaleAfterMs = 150000;  // no fresh payload -> OFFLINE
+constexpr uint32_t kPollIntervalMs = 10000;  // LAN polling is quota-free
+constexpr uint32_t kStaleAfterMs = 45000;   // no fresh payload -> OFFLINE
 
 // Orientation (portrait + upside-down): gravity sign on the screen's Y axis,
 // with hysteresis + debounce, same approach as the pomodoro app.
@@ -110,8 +109,7 @@ class ClaudeWatchApp : public CheekoApp {
     if (now_ >= poll_next_ms_) {
       poll_next_ms_ = now_ + kPollIntervalMs;
       if (Cheeko().wifi().IsConnected()) {
-        Cheeko().cloud().GetJson(std::string("https://ntfy.sh/") + kNtfyTopic +
-                                 "/json?poll=1&since=90s");
+        Cheeko().cloud().GetJson(kStatsUrl);
       }
     }
     // Redraw on state transitions the user can see: data turning stale and

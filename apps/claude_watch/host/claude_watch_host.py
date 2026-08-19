@@ -19,15 +19,25 @@ import glob
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # ---- Configuration ---------------------------------------------------------
 
-# Must match kNtfyTopic in src/app.cc. Pick your own long random name.
-NTFY_TOPIC = "cheeko-claude-watch-x9m4rq72"
+# Primary transport: serve the stats over the LAN; the device polls
+# http://<this machine>:SERVE_PORT/stats directly (set the same address in
+# src/app.cc kStatsUrl). No third party, no quotas. Allow the Windows
+# Firewall prompt (private networks) on first run.
+SERVE_PORT = 8787
+
+# Optional remote transport: set a topic name to ALSO push via ntfy.sh when
+# the device isn't on your LAN. Mind ntfy.sh's DAILY per-IP publish quota —
+# continuous telemetry can exhaust it. None disables pushing.
+NTFY_TOPIC = None
 
 # ntfy.sh rate-limits per visitor IP (and NAT means the laptop and the device
 # often count as ONE visitor), so be frugal: re-scan often, but only push when
@@ -243,9 +253,41 @@ def push(payload):
         pass
 
 
+# ---- LAN server -------------------------------------------------------------
+
+_current_payload = "CW1|STARTING|0|-1|0|-1|0|0|?|0|0|0|0|0|STARTING"
+
+
+class StatsHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/stats"):
+            body = _current_payload.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *args):  # keep the console for payload lines
+        pass
+
+
+def start_lan_server():
+    server = ThreadingHTTPServer(("", SERVE_PORT), StatsHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+
 def main():
-    print(f"claude-watch host: pushing to ntfy.sh/{NTFY_TOPIC} "
-          f"on change (heartbeat {PUSH_INTERVAL_S}s, Ctrl+C to stop)")
+    global _current_payload
+    start_lan_server()
+    print(f"claude-watch host: serving http://<this machine>:{SERVE_PORT}/stats "
+          f"on the LAN (Ctrl+C to stop)")
+    if NTFY_TOPIC:
+        print(f"also pushing to ntfy.sh/{NTFY_TOPIC} on change "
+              f"(heartbeat {PUSH_INTERVAL_S}s)")
     plan, billing = read_plan()
     plan_refreshed = time.time()
     last_payload = None
@@ -261,13 +303,17 @@ def main():
                 plan, billing = read_plan()
                 plan_refreshed = now
             payload = build_payload(now, plan, billing)
-            due = payload != last_payload or now - last_push >= PUSH_INTERVAL_S
-            if due and now >= push_allowed_at:
+            _current_payload = payload
+            changed = payload != last_payload
+            if changed:
+                print(time.strftime("%H:%M:%S"), payload)
+            if NTFY_TOPIC and now >= push_allowed_at and (
+                    changed or now - last_push >= PUSH_INTERVAL_S):
                 push(payload)
-                last_payload = payload
                 last_push = now
                 backoff_s = 0
-                print(time.strftime("%H:%M:%S"), payload)
+            if changed:
+                last_payload = payload
         except KeyboardInterrupt:
             raise
         except urllib.error.HTTPError as error:

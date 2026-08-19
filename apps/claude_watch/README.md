@@ -7,10 +7,17 @@ renders them as a live desk dashboard: how many tokens you've burned this
 today's and this week's totals, and your plan tier.
 
 ```
-laptop: claude_watch_host.py  →  ntfy.sh topic  →  cheeko polls (~20s)
-        (tails ~/.claude/projects/**/*.jsonl,
+laptop: claude_watch_host.py  →  http://<laptop>:8787/stats  →  cheeko polls (~10s)
+        (tails ~/.claude/projects/**/*.jsonl,          (same LAN)
          plan tier from ~/.claude.json)
 ```
+
+Both machines must be on the same network (the device's radio is 2.4 GHz
+only). Set your laptop's LAN IP in `kStatsUrl` (src/app.cc), and allow the
+Windows Firewall prompt (private networks) the first time the host runs. For
+remote use, the host can also push to an ntfy.sh topic (`NTFY_TOPIC` in the
+host script) — but mind ntfy.sh's **daily** per-IP publish quota; continuous
+telemetry can exhaust it, which is why LAN is the default.
 
 Only token **counts** and tier labels leave your machine — never any
 conversation content.
@@ -25,9 +32,9 @@ conversation content.
 | **About** | Plan, billing, model, Wi-Fi and feed health |
 
 A `LIVE` / `OFF` chip sits on every screen — `OFF` means no fresh payload for
-2.5 minutes (host not running, or no Wi-Fi). The device chirps once when
-context (or your configured budget) crosses 90%. Auto-rotates upright /
-upside-down.
+45 s (host not running, firewall blocking, or no Wi-Fi). The device chirps
+once when context (or your configured budget) crosses 90%. Auto-rotates
+upright / upside-down.
 
 ## Wi-Fi setup — on the device itself
 
