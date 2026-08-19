@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
@@ -28,7 +29,13 @@ from datetime import datetime, timezone
 # Must match kNtfyTopic in src/app.cc. Pick your own long random name.
 NTFY_TOPIC = "cheeko-claude-watch-x9m4rq72"
 
-PUSH_INTERVAL_S = 15          # how often to push to ntfy
+# ntfy.sh rate-limits per visitor IP (and NAT means the laptop and the device
+# often count as ONE visitor), so be frugal: re-scan often, but only push when
+# the payload actually changed, with a slow heartbeat so the device's
+# staleness detector stays fed. On 429, back off exponentially — hammering
+# through it keeps the rate-limit bucket empty forever.
+CHECK_INTERVAL_S = 15         # how often to re-scan the transcripts
+PUSH_INTERVAL_S = 60          # heartbeat push even when nothing changed
 BLOCK_HOURS = 5               # Claude's rolling usage-window length
 
 # Context window for the percent gauge. None = auto-calibrate: assume at
@@ -238,9 +245,13 @@ def push(payload):
 
 def main():
     print(f"claude-watch host: pushing to ntfy.sh/{NTFY_TOPIC} "
-          f"every {PUSH_INTERVAL_S}s (Ctrl+C to stop)")
+          f"on change (heartbeat {PUSH_INTERVAL_S}s, Ctrl+C to stop)")
     plan, billing = read_plan()
     plan_refreshed = time.time()
+    last_payload = None
+    last_push = 0.0
+    backoff_s = 0
+    push_allowed_at = 0.0
     while True:
         now = time.time()
         try:
@@ -250,14 +261,28 @@ def main():
                 plan, billing = read_plan()
                 plan_refreshed = now
             payload = build_payload(now, plan, billing)
-            push(payload)
-            print(time.strftime("%H:%M:%S"), payload)
+            due = payload != last_payload or now - last_push >= PUSH_INTERVAL_S
+            if due and now >= push_allowed_at:
+                push(payload)
+                last_payload = payload
+                last_push = now
+                backoff_s = 0
+                print(time.strftime("%H:%M:%S"), payload)
         except KeyboardInterrupt:
             raise
+        except urllib.error.HTTPError as error:
+            if error.code == 429:
+                backoff_s = min(max(backoff_s * 2, 60), 600)
+                push_allowed_at = now + backoff_s
+                print(time.strftime("%H:%M:%S"),
+                      f"ntfy rate limit hit; backing off {backoff_s}s",
+                      file=sys.stderr)
+            else:
+                print(time.strftime("%H:%M:%S"), "error:", error, file=sys.stderr)
         except Exception as error:  # keep reporting through transient failures
             print(time.strftime("%H:%M:%S"), "error:", error, file=sys.stderr)
         try:
-            time.sleep(PUSH_INTERVAL_S)
+            time.sleep(CHECK_INTERVAL_S)
         except KeyboardInterrupt:
             print("stopped")
             return

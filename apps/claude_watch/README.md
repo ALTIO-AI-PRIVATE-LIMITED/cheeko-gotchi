@@ -7,7 +7,7 @@ renders them as a live desk dashboard: how many tokens you've burned this
 today's and this week's totals, and your plan tier.
 
 ```
-laptop: claude_watch_host.py  →  ntfy.sh topic  →  cheeko polls (~8s)
+laptop: claude_watch_host.py  →  ntfy.sh topic  →  cheeko polls (~20s)
         (tails ~/.claude/projects/**/*.jsonl,
          plan tier from ~/.claude.json)
 ```
@@ -25,8 +25,9 @@ conversation content.
 | **About** | Plan, billing, model, Wi-Fi and feed health |
 
 A `LIVE` / `OFF` chip sits on every screen — `OFF` means no fresh payload for
-45 s (host not running, or no Wi-Fi). The device chirps once when context (or
-your configured budget) crosses 90%. Auto-rotates upright / upside-down.
+2.5 minutes (host not running, or no Wi-Fi). The device chirps once when
+context (or your configured budget) crosses 90%. Auto-rotates upright /
+upside-down.
 
 ## Wi-Fi setup — on the device itself
 
@@ -72,9 +73,18 @@ context percent auto-calibrates to the largest context ever observed (at
 least 200k), since the true per-model window isn't recorded locally — or pin
 it with `CONTEXT_WINDOW_TOKENS`.
 
+## Rate limits
+
+ntfy.sh limits requests per visitor IP, and behind home NAT the laptop and
+the device look like ONE visitor — hence the frugal cadence: the host pushes
+only when the stats change (60 s heartbeat otherwise) and backs off
+exponentially on HTTP 429; the device polls every 20 s. If you still hit
+limits (e.g. several devices on one network), self-host ntfy or use an
+authenticated topic.
+
 ## Payload format
 
-Pipe-delimited, pushed every 15 s:
+Pipe-delimited, pushed on change (heartbeat every 60 s):
 
 ```
 CW1|<plan>|<window elapsed %>|<budget % or -1>|<window tokens k>|<reset min or -1>|

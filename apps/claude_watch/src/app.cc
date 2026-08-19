@@ -33,8 +33,10 @@ constexpr int kTicks = 60;
 // random name — anyone who knows the topic can read these counters.
 const char* const kNtfyTopic = "cheeko-claude-watch-x9m4rq72";
 
-constexpr uint32_t kPollIntervalMs = 8000;
-constexpr uint32_t kStaleAfterMs = 45000;   // no fresh payload -> OFFLINE
+// Polling is deliberately slow: ntfy.sh rate-limits per visitor IP, and
+// behind home NAT the device and the pushing laptop count as one visitor.
+constexpr uint32_t kPollIntervalMs = 20000;
+constexpr uint32_t kStaleAfterMs = 150000;  // no fresh payload -> OFFLINE
 
 // Orientation (portrait + upside-down): gravity sign on the screen's Y axis,
 // with hysteresis + debounce, same approach as the pomodoro app.
@@ -109,7 +111,7 @@ class ClaudeWatchApp : public CheekoApp {
       poll_next_ms_ = now_ + kPollIntervalMs;
       if (Cheeko().wifi().IsConnected()) {
         Cheeko().cloud().GetJson(std::string("https://ntfy.sh/") + kNtfyTopic +
-                                 "/json?poll=1&since=30s");
+                                 "/json?poll=1&since=90s");
       }
     }
     // Redraw on state transitions the user can see: data turning stale and
