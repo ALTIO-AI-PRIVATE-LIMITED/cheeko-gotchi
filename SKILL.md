@@ -1,9 +1,9 @@
 ---
-name: ostb-xiaozhi-esp32s3
-description: Build firmware for the OSTB_XIAOZHI_V1.2 "Cheeko Gotchi" ESP32-S3 handheld (240x296 ST7789 LCD, CST810 touch, ES8311 speaker, ES7210 mics, LIS2DH12 accelerometer). Use when writing, flashing, or debugging code for this board, or any ESP32-S3 device with an SPI ST7789-class panel plus an Espressif codec. Covers Arduino toolchain setup, verified pin map, display/touch/audio/tilt bring-up, JPEG rendering, a serial asset-upload protocol, and a long list of hardware gotchas that are expensive to rediscover.
+name: cheeko-gotchi-esp32s3
+description: Build firmware for the Cheeko Gotchi v1.2 ESP32-S3 handheld (240x296 ST7789 LCD, CST810 touch, ES8311 speaker, ES7210 mics, LIS2DH12 accelerometer). Use when writing, flashing, or debugging code for this board, or any ESP32-S3 device with an SPI ST7789-class panel plus an Espressif codec. Covers Arduino toolchain setup, verified pin map, display/touch/audio/tilt bring-up, JPEG rendering, a serial asset-upload protocol, and a long list of hardware gotchas that are expensive to rediscover.
 ---
 
-# OSTB_XIAOZHI_V1.2 (Cheeko Gotchi) — ESP32-S3 Handheld Firmware Guide
+# Cheeko Gotchi v1.2 — ESP32-S3 Handheld Firmware Guide
 
 Everything in this document was verified on real hardware. Where a value was
 determined empirically (display orientation, touch mapping, tilt signs), that
@@ -22,7 +22,7 @@ measurement if your unit differs.
 ## 1. What this hardware actually is
 
 A small battery-powered handheld ("AI companion" toy form factor) built on an
-ESP32-S3. The board silkscreen / schematic name is `OSTB_XIAOZHI_V1.2`.
+ESP32-S3. This guide covers board revision v1.2.
 
 | Block | Part | Details |
 | --- | --- | --- |
@@ -55,9 +55,9 @@ I²S master; both codecs are slaves).
 
 ## 2. Verified pin map
 
-Source of truth is `OSTB_XIAOZHI_V1.2.pdf` (the schematic). These values are
-cross-checked against three independent working sketches and confirmed by
-running code.
+These values are cross-checked against three independent working sketches and
+confirmed by running code. [`firmware/hardware_test`](firmware/hardware_test/)
+uses the same pin map.
 
 ```cpp
 // ---- Display (SPI) ----
@@ -105,7 +105,8 @@ Bus speeds that work reliably: `Wire.begin(SDA, SCL, 400000)` (400kHz I²C) and
 ## 3. Toolchain setup (Arduino, not ESP-IDF)
 
 ESP-IDF works too, but the Arduino path is dramatically faster to iterate with
-on this board, and all the reference code is Arduino sketches.
+on this board, and the code in this guide is written for Arduino. For a working
+ESP-IDF reference, see [`firmware/hardware_test`](firmware/hardware_test/).
 
 ```bash
 # 1. arduino-cli
@@ -833,21 +834,21 @@ few lines permanently — it instantly distinguishes "my driver is wrong" from
 
 ## 12. Reference material
 
-- **Board schematic and working bring-up sketches:**
-  <https://github.com/raviramp36/cheeko-gotchi> — contains
-  `OSTB_XIAOZHI_V1.2.pdf`, a full hardware self-test sketch, two animated-face
-  demos (raw SPI and LVGL), a MicroPython port, and prebuilt binaries. This is
-  the authoritative source for this board.
+- **Working bring-up code for this board:**
+  [`firmware/hardware_test`](firmware/hardware_test/) in this repository — an
+  ESP-IDF firmware that drives the display, touch, buttons, speaker,
+  microphones and accelerometer. A prebuilt image is on the
+  [Releases](https://github.com/ALTIO-AI-PRIVATE-LIMITED/cheeko-gotchi/releases)
+  page.
 - **Espressif ES8311 / ES7210 drivers** (`esp_codec_dev`) — the origin of the
   register sequences above, if you need capture or more codec features.
 - **TJpg_Decoder** — <https://github.com/Bodmer/TJpg_Decoder>
 - **ST7789 datasheet** — for the full command set (`0x36` MADCTL, `0x3a`
   COLMOD, `0x2a`/`0x2b`/`0x2c` addressing).
 
-Note that there is also an *official* "Cheeko Gotchi SDK" repo presenting a
-clean C++ app API. Be aware that its firmware layer is a **scaffold**: the
-display, touch and audio service implementations are empty stubs with
-`// TODO(board)` comments, and its own porting notes list those drivers as
-unwritten. It's useful as an architectural reference, but it will not drive
-this hardware as-is. The bring-up code in the repo linked above is what
-actually works.
+Note that the C++ app API in this repository (`sdk/include/cheeko.h`) is not
+wired to the hardware yet: the base firmware in `firmware/cheekoai_base` is a
+**scaffold** whose display, touch and audio services are empty stubs with
+`// TODO(board)` comments. It's useful as an architectural reference, but it
+will not drive this hardware as-is. Until that lands,
+[`firmware/hardware_test`](firmware/hardware_test/) is the working reference.
