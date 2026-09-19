@@ -5,6 +5,11 @@ into a real app platform. It is intentionally compile-light: the runtime shape,
 service boundaries, and lifecycle are present, while hardware-specific driver
 adapters remain TODOs until the final board support package is selected.
 
+> **Status:** because the display and other hardware adapters are not connected
+> yet, this firmware boots to a blank screen. To check a device, flash
+> [`firmware/hardware_test`](../hardware_test/) instead; it drives every part of
+> the board directly.
+
 This directory is separate from the public SDK examples. Product firmware owns
 boot, provisioning, OTA, app orchestration, permissions, and hardware services.
 Apps should depend on the stable SDK surface, not on these internal classes.

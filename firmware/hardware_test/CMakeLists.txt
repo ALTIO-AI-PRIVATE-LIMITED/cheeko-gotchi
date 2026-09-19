@@ -1,0 +1,5 @@
+# Cheeko Gotchi — all-in-one hardware test (ESP-IDF)
+# Target board: Cheeko Gotchi v1.2 (ESP32-S3 + JD9853 2.01" 240x296 LCD)
+cmake_minimum_required(VERSION 3.16)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(cheeko_gotchi_hardware_test)

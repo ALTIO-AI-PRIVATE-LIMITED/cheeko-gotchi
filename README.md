@@ -38,6 +38,19 @@ starts the local cloud service in-process, pairs a simulated device, generates a
 signed app manifest, commands a Wi-Fi OTA install, and simulates device
 verification.
 
+## Check Your Device
+
+Flash the [hardware test firmware](firmware/hardware_test/) to see every part of
+the device working: display, touch, buttons, speaker, microphones, motion sensor
+and charging. The prebuilt image flashes in one command:
+
+```bash
+esptool.py --chip esp32s3 -p PORT -b 460800 write_flash 0x0 cheeko-gotchi-hardware-test_merged.bin
+```
+
+Then unplug and replug the USB cable to start it. Its README also has the full
+pin map and I²C device list for the board.
+
 ## Examples
 
 | Example | What it teaches |
@@ -69,7 +82,8 @@ start from.
 | `schemas/` | Machine-readable app package contract |
 | `cloud/` | Cloud builder API contract and a runnable local service |
 | `demo/` | Local end-to-end loop: pairing, generation, OTA, install report |
-| `firmware/cheekoai_base/` | Base firmware/runtime scaffold |
+| `firmware/hardware_test/` | Hardware test firmware: checks every part of the device, documents the pin map |
+| `firmware/cheekoai_base/` | Base firmware/runtime scaffold (hardware adapters not connected yet) |
 | `tools/cheeko` | Local CLI helper |
 
 ## Device Model
@@ -82,14 +96,17 @@ Cheeko Gotchi behaves like a small app platform:
 - Apps are small, permissioned, signed packages installed over Wi-Fi OTA.
 - Developers build apps without touching board bring-up code.
 
-Board-specific hardware bring-up lives in the board support package and is not
-part of this repository. Apps never depend on it.
+Board-specific hardware bring-up lives in the board support package. Apps never
+depend on it. [`firmware/hardware_test/`](firmware/hardware_test/) shows how each
+part of the board is driven, for developers who want to go below the SDK.
 
 ## Status
 
 v0.1 is a developer foundation, not a finished runtime. The app lifecycle and
 public SDK surface are locked; driver adapters behind the runtime are still
-being wired up. See [`docs/sdk/roadmap.md`](docs/sdk/roadmap.md) for what lands
+being wired up, so the base firmware does not drive the screen yet; flash
+[`firmware/hardware_test`](firmware/hardware_test/) to exercise a device today.
+See [`docs/sdk/roadmap.md`](docs/sdk/roadmap.md) for what lands
 when, and [`docs/product/architecture.md`](docs/product/architecture.md) for the
 platform blueprint.
 
