@@ -86,7 +86,9 @@ def print_self_test(args):
     print("5. Wi-Fi: scan nearby networks")
     print()
     print("Current runnable options:")
-    print("- Read examples/self_test/README.md")
+    print("- Flash the hardware test firmware: see firmware/hardware_test/README.md")
+    print("  esptool.py --chip esp32s3 -p PORT -b 460800 write_flash 0x0 cheeko-gotchi-hardware-test_merged.bin")
+    print("- SDK version of this checklist (runs once the base firmware is wired): examples/self_test/README.md")
 
 
 def print_product(args):

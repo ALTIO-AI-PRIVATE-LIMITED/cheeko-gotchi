@@ -29,7 +29,7 @@ Cloud key: optional
 ## Developer Journey
 
 1. Run `doctor`.
-2. Run the self-test.
+2. Flash the hardware test ([`firmware/hardware_test`](../../firmware/hardware_test/)) to check every part of the device.
 3. Copy an example.
 4. Implement `CheekoApp`.
 5. Build and flash.

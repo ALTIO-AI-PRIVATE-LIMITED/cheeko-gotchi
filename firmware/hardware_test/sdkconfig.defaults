@@ -1,0 +1,10 @@
+# Cheeko Gotchi hardware test defaults
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_FREERTOS_HZ=1000
+# Route console logs to the ESP32-S3 native USB-Serial/JTAG (the usbmodem port),
+# not UART0 — this board's only USB connection is the native USB.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# The module has 8 MB octal PSRAM; this test doesn't need it, so PSRAM is left off.
