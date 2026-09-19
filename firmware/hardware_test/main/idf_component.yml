@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.5"
+  lvgl/lvgl: "~9.4.0"
+  esp_lvgl_port: "~2.7.0"

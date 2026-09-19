@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cheeko.ai/schemas/cheekoai-app-manifest.schema.json",
+  "title": "Cheekoai App Manifest",
+  "type": "object",
+  "required": ["schema", "app_id", "name", "version", "sdk", "boards", "entrypoint", "permissions"],
+  "properties": {
+    "schema": {
+      "const": "ai.cheeko.app.v1"
+    },
+    "app_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9.-]+)?$"
+    },
+    "sdk": {
+      "type": "object",
+      "required": ["min"],
+      "properties": {
+        "min": { "type": "string" },
+        "max": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "boards": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "entrypoint": {
+      "type": "string",
+      "default": "CreateCheekoApp"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "display",
+          "touch",
+          "buttons",
+          "speaker.tone",
+          "speaker.audio",
+          "mic.level",
+          "mic.stream",
+          "wifi",
+          "cloud.fetch",
+          "cloud.voice",
+          "storage.local",
+          "notifications"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "path", "sha256"],
+        "properties": {
+          "type": { "enum": ["native", "wasm", "assets"] },
+          "path": { "type": "string" },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "properties": {
+        "keep_previous": { "type": "boolean" },
+        "healthcheck_seconds": { "type": "integer", "minimum": 1, "maximum": 300 }
+      },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "required": ["alg", "key_id", "value"],
+      "properties": {
+        "alg": { "enum": ["ed25519"] },
+        "key_id": { "type": "string" },
+        "value": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

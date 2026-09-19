@@ -1,0 +1,47 @@
+{
+  "id": "cheeko-gotchi",
+  "product_name": "Cheeko Gotchi",
+  "sdk": {
+    "min": "0.1.0",
+    "max": "0.x"
+  },
+  "mcu": {
+    "family": "ESP32-S3"
+  },
+  "display": {
+    "width": 240,
+    "height": 296,
+    "pixel_format": "RGB565",
+    "touch": true
+  },
+  "audio": {
+    "microphone": true,
+    "speaker": true,
+    "sample_rate_hz": 24000
+  },
+  "sensors": {
+    "accelerometer": true
+  },
+  "connectivity": {
+    "wifi": true,
+    "ble": true
+  },
+  "buttons": [
+    "boot",
+    "power",
+    "volume_up",
+    "volume_down"
+  ],
+  "capabilities": [
+    "display",
+    "touch",
+    "audio.mic",
+    "audio.speaker",
+    "motion",
+    "wifi",
+    "ble",
+    "cloud.fetch",
+    "storage",
+    "ota"
+  ]
+}
