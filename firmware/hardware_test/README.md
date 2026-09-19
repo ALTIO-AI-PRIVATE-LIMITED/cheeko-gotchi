@@ -44,7 +44,8 @@ esptool.py --chip esp32s3 -p PORT -b 460800 write_flash 0x0 cheeko-gotchi-hardwa
 ## What you'll see
 
 1. **First boot:** `TOUCH CALIBRATION` — tap the three dots as they appear.
-   The result is saved; hold **Boot** while powering on to calibrate again.
+   The result is saved. To calibrate again, flash the image again; that clears
+   the saved calibration.
 2. The title `CHEEKO GOTCHI  HW TEST` with colour swatches and live rows, and a
    boot chirp from the speaker.
 3. **Touch** the screen: a marker follows your finger, a blip plays, `TXY` updates.
