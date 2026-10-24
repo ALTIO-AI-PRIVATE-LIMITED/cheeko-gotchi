@@ -155,6 +155,26 @@ class Wifi {  // [Stable]
   bool IsConnected() const;
 };
 
+// Snapshot of the iPhone bridge. [Experimental]
+struct PhoneBridgeStatus {
+  bool app_linked = false;   // the iOS agent app is connected over BLE
+  bool usb_ready = false;    // the phone sees the board as its USB mouse + keyboard
+  bool mirroring = false;    // the phone's screen is arriving over AirPlay
+  std::string hotspot_ssid;  // the board's own Wi-Fi, for the phone to join
+  std::string hotspot_pass;
+  std::string last_action;   // last pointer/keyboard command, e.g. "click"
+};
+
+// The board as an iPhone agent's eyes and hands (ESP32 iPhone Agent): the firmware is the phone's
+// USB mouse + keyboard and its AirPlay receiver, driven over BLE by the iOS app. Apps only show
+// and stop it. [Experimental]
+class PhoneBridge {
+ public:
+  void Start();
+  PhoneBridgeStatus Status();
+  void StopAgent();  // release held keys/buttons and ask the iOS app to stop its run
+};
+
 // ===========================================================================
 // Runtime — the single entry point to every subsystem
 // ===========================================================================
@@ -170,6 +190,7 @@ class CheekoRuntime {
   Log& log();          // [Stable]
   Cloud& cloud();
   Wifi& wifi();
+  PhoneBridge& phone();  // [Experimental]
 };
 
 // ===========================================================================

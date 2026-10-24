@@ -65,6 +65,7 @@ pin map and I²C device list for the board.
 | [`audio_loopback`](examples/audio_loopback/) | Simultaneous capture and playback |
 | [`cloud_voice_bot`](examples/cloud_voice_bot/) | Push-to-talk cloud voice sessions |
 | [`self_test`](examples/self_test/) | Display, touch, speaker, mic, Wi-Fi checklist |
+| [`iphone_agent`](examples/iphone_agent/) | Status screen and stop button for an AI agent driving an iPhone |
 
 See [`docs/guides/example-apps.md`](docs/guides/example-apps.md) for which one to
 start from.
@@ -74,7 +75,7 @@ start from.
 | Path | Purpose |
 | --- | --- |
 | `sdk/include/` | The public SDK header — the stable app contract |
-| `examples/` | Ten example apps to fork |
+| `examples/` | Eleven example apps to fork |
 | `docs/sdk/` | API reference, app lifecycle, SDK roadmap |
 | `docs/guides/` | Getting started and cloud/audio workflows |
 | `docs/product/` | Platform architecture, OTA flow, app package contract |
@@ -83,6 +84,7 @@ start from.
 | `cloud/` | Cloud builder API contract and a runnable local service |
 | `demo/` | Local end-to-end loop: pairing, generation, OTA, install report |
 | `firmware/hardware_test/` | Hardware test firmware: checks every part of the device, documents the pin map |
+| `firmware/iphone_agent/` | Runs [ESP32 iPhone Agent](https://github.com/onehumanbeing/esp32-iphone-agent) on the Cheeko: the iPhone's AirPlay receiver and USB mouse/keyboard for an AI agent |
 | `firmware/cheekoai_base/` | Base firmware/runtime scaffold (hardware adapters not connected yet) |
 | `tools/cheeko` | Local CLI helper |
 

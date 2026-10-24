@@ -159,6 +159,22 @@ Use this instead of `printf`. Lines surface on the USB serial console and in the
 
 ---
 
+### `phone()` — PhoneBridge *[Experimental]*
+
+The board as the eyes and hands of an iPhone agent
+([ESP32 iPhone Agent](https://github.com/onehumanbeing/esp32-iphone-agent)): the
+firmware is the phone's USB mouse + keyboard and its AirPlay receiver, driven
+over BLE by the iOS app. Apps only show and stop it.
+
+| Method | Purpose |
+| --- | --- |
+| `Start()` | Bring up the BLE link, the hotspot, AirPlay and USB HID |
+| `Status()` | `PhoneBridgeStatus`: app linked, USB ready, mirroring, hotspot SSID/password, last action |
+| `StopAgent()` | Release held keys/buttons and ask the iOS app to stop its run |
+
+[`firmware/iphone_agent`](../../firmware/iphone_agent/) runs the same thing on
+the device today, without the SDK.
+
 ## Rules for app code
 
 1. **Don't block.** `OnTick` and the event callbacks run on the app loop. Long
