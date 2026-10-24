@@ -1,0 +1,15 @@
+// Copy to Local.xcconfig (git-ignored) and fill in. Everything here is optional except your team.
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Your own bundle ID; the widget is <id>.activity and the App Group group.<id>.
+IA_BUNDLE_ID = com.example.esp32agent
+
+// One-tap hotspot join, Live Activity group and time-sensitive alerts need these capabilities
+// (Hotspot Configuration needs a paid developer account). Leave empty to build without them.
+IA_ENTITLEMENTS = IPhoneAgent/IPhoneAgent.entitlements
+IA_WIDGET_ENTITLEMENTS = AgentActivity/AgentActivity.entitlements
+
+// Optional model preset for your own builds (never commit a key).
+IA_PRESET_BASE_URL =
+IA_PRESET_MODEL =
+IA_PRESET_KEY =

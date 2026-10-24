@@ -1,0 +1,112 @@
+name: IPhoneAgent
+options:
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "18.0"
+configFiles:
+  Debug: Config/Shared.xcconfig
+  Release: Config/Shared.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  IPhoneAgent:
+    type: application
+    platform: iOS
+    sources:
+      - IPhoneAgent
+      - Shared
+      - path: ../prompts  # the model prompts, bundled as a folder
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: AgentActivity
+        embed: true
+    info:
+      path: IPhoneAgent/Info.plist
+      properties:
+        CFBundleDisplayName: ESP32 Agent
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false  # HTTPS only
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchLogo
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: $(IA_BUNDLE_ID)
+            CFBundleURLSchemes: [iphoneagent]
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSBluetoothAlwaysUsageDescription: ESP32 Agent talks to its USB board over Bluetooth to see the screen and move the pointer.
+        UIBackgroundModes: [bluetooth-central]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:  # shared run archives (Settings › Privacy › Export) open as imported runs
+          - CFBundleTypeName: ESP32 Agent runs
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.zip-archive]
+        # Optional build-time LLM preset from Config/Local.xcconfig (empty in the open-source build)
+        IAPresetBaseURL: $(IA_PRESET_BASE_URL)
+        IAPresetModel: $(IA_PRESET_MODEL)
+        IAPresetKey: $(IA_PRESET_KEY)
+        IAAppGroup: group.$(IA_BUNDLE_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(IA_BUNDLE_ID)
+        PRODUCT_NAME: IPhoneAgent
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        # Hotspot entitlement needs an Apple ID in Xcode; opt in via Local.xcconfig.
+        CODE_SIGN_ENTITLEMENTS: $(IA_ENTITLEMENTS)
+  AgentActivity:
+    type: app-extension
+    platform: iOS
+    sources: [AgentActivity, Shared]
+    info:
+      path: AgentActivity/Info.plist
+      properties:
+        CFBundleDisplayName: ESP32 Agent
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        IAAppGroup: group.$(IA_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(IA_BUNDLE_ID).activity
+        CODE_SIGN_ENTITLEMENTS: $(IA_WIDGET_ENTITLEMENTS)
+        PRODUCT_NAME: AgentActivity
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SKIP_INSTALL: YES
+  IPhoneAgentTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [IPhoneAgentTests]
+    dependencies:
+      - target: IPhoneAgent
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(IA_BUNDLE_ID).tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/IPhoneAgent.app/IPhoneAgent"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  IPhoneAgent:
+    build:
+      targets:
+        IPhoneAgent: all
+        IPhoneAgentTests: [test]
+    test:
+      targets: [IPhoneAgentTests]

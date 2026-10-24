@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local config and secrets
+.env
+hardware/hid_bridge/secrets.h
+
+# Build output
+hardware/build/
+hardware/hid_bridge/build/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Host test output
+hardware/tests/test
+hardware/tests/test.dSYM/
+hardware/tools/out/

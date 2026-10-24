@@ -3,7 +3,8 @@ https://github.com/onehumanbeing/esp32-iphone-agent
 
 iphone_agent/iphone_agent.ino is adapted from hardware/hid_bridge/hid_bridge.ino of that
 project, and flash.sh from hardware/flash.sh. Both are used under the MIT License below.
-The rest of the upstream firmware is fetched at build time by flash.sh; its AirPlay receiver
+The whole upstream project is vendored in third_party/esp32-iphone-agent (commit
+680d22768ef6c67968c1663b99c9870c9c647ab2); its AirPlay receiver
 (hardware/hid_bridge/src/airplay/) is GPL-3.0, see README.md.
 
 ----------------------------------------------------------------------------------------------

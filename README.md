@@ -85,6 +85,7 @@ start from.
 | `demo/` | Local end-to-end loop: pairing, generation, OTA, install report |
 | `firmware/hardware_test/` | Hardware test firmware: checks every part of the device, documents the pin map |
 | `firmware/iphone_agent/` | Runs [ESP32 iPhone Agent](https://github.com/onehumanbeing/esp32-iphone-agent) on the Cheeko: the iPhone's AirPlay receiver and USB mouse/keyboard for an AI agent |
+| `third_party/esp32-iphone-agent/` | Vendored copy of ESP32 iPhone Agent (firmware, iOS app, prompts) used by `firmware/iphone_agent/` |
 | `firmware/cheekoai_base/` | Base firmware/runtime scaffold (hardware adapters not connected yet) |
 | `tools/cheeko` | Local CLI helper |
 
@@ -120,4 +121,6 @@ reason to work around the runtime.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE), except `third_party/`, which keeps its own
+licenses. In `third_party/esp32-iphone-agent`, the AirPlay receiver
+(`hardware/hid_bridge/src/airplay/`) is GPL-3.0, and so is any firmware that links it.

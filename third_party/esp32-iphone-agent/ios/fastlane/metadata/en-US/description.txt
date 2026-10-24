@@ -1,0 +1,19 @@
+ESP32 Agent lets an AI model use your iPhone the way you do: it looks at the screen, taps, swipes and types until the task is done.
+
+It works through a small ESP32 USB board. Plug the board into your iPhone and the app connects to it over Bluetooth. Mirror the screen to the board once, and the model can see. The board then moves the pointer and types like a mouse and keyboard. No jailbreak, no Mac, no laptop.
+
+HOW IT WORKS
+• Plug it in. The board connects to the app over Bluetooth.
+• Mirror once. Screen Mirroring to the board gives the model its eyes.
+• Just tell it what to do. Type a task, and the agent works it out step by step.
+• Every step is recorded. Replay a run, fix a step, and save it as your own intent.
+
+YOUR MODEL, YOUR DATA
+Use any OpenAI-compatible vision model: a cloud API or your own server at home. Screenshots go only to the endpoint you set up. Runs, logs and crash reports stay on your iPhone until you share them.
+
+OPEN SOURCE
+The app and the board firmware are open source: github.com/onehumanbeing/esp32-iphone-agent
+
+REQUIREMENTS
+• An ESP32-S3 board running the ESP32 Agent firmware (see the GitHub page)
+• An endpoint for an OpenAI-compatible vision model

@@ -1,0 +1,65 @@
+# Store builds: `fastlane beta` (from ios/) archives a Release and uploads it to TestFlight.
+# Auth is an App Store Connect API key described in ~/.appstoreconnect/config.env
+# (ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH); signing uses Xcode's Apple ID and the team in Config/Local.xcconfig.
+# The LLM preset from Local.xcconfig is cleared and the built app is checked for it.
+
+default_platform(:ios)
+
+STORE_ENV = File.expand_path("~/.appstoreconnect/config.env")
+
+def key_path
+  File.expand_path(ENV["ASC_KEY_PATH"].gsub("$HOME", Dir.home))
+end
+
+platform :ios do
+  private_lane :asc_key do
+    File.readlines(STORE_ENV).each do |line|
+      k, v = line.strip.split("=", 2)
+      ENV[k] = v.delete('"') if k && v && !k.start_with?("#")
+    end
+    app_store_connect_api_key(key_id: ENV["ASC_KEY_ID"], issuer_id: ENV["ASC_ISSUER_ID"],
+                              key_filepath: key_path)
+  end
+
+  desc "Release build to TestFlight (internal testers get it once processing finishes)"
+  lane :beta do
+    asc_key
+    bundle_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+    build = latest_testflight_build_number(app_identifier: bundle_id, initial_build_number: 0) + 1
+    # Signing uses the Apple ID signed in to Xcode: only it can register the App Group (the API key can't).
+    auth = "-allowProvisioningUpdates"
+    settings = {
+      IA_BUNDLE_ID: bundle_id,
+      IA_ENTITLEMENTS: "IPhoneAgent/IPhoneAgent.entitlements",
+      IA_WIDGET_ENTITLEMENTS: "AgentActivity/AgentActivity.entitlements",
+      IA_PRESET_BASE_URL: "", IA_PRESET_MODEL: "", IA_PRESET_KEY: "",
+      CURRENT_PROJECT_VERSION: build,
+    }.map { |k, v| "#{k}='#{v}'" }.join(" ")
+
+    ipa = build_app(project: "IPhoneAgent.xcodeproj", scheme: "IPhoneAgent", configuration: "Release",
+                    export_method: "app-store", output_directory: "build/store", clean: true,
+                    xcargs: "#{settings} #{auth}", export_xcargs: auth)
+    check_no_preset(ipa: ipa)
+    upload_to_testflight(ipa: ipa, skip_waiting_for_build_processing: true)
+    UI.success("Uploaded #{bundle_id} build #{build}")
+  end
+
+  # Stop the upload if any LLM preset made it into the app: the Info.plist keys must be empty, and the
+  # key from Local.xcconfig must appear in no file of the app (it is never printed).
+  private_lane :check_no_preset do |options|
+    local = File.expand_path("../Config/Local.xcconfig", __dir__)
+    key = File.exist?(local) ? File.read(local)[/^\s*IA_PRESET_KEY\s*=\s*(\S+)/, 1] : nil
+    Dir.mktmpdir do |dir|
+      sh("unzip", "-q", options[:ipa], "-d", dir, log: false)
+      plist = Dir["#{dir}/Payload/*.app/Info.plist"].first
+      %w[IAPresetKey IAPresetBaseURL IAPresetModel].each do |name|
+        value = `/usr/libexec/PlistBuddy -c "Print :#{name}" "#{plist}" 2>/dev/null`.strip
+        UI.user_error!("#{name} is set in the store build; refusing to upload") unless value.empty?
+      end
+      if key && system("grep", "-rqF", "--", key, dir)
+        UI.user_error!("The preset API key is inside the store build; refusing to upload")
+      end
+    end
+    UI.success("No LLM preset in the store build")
+  end
+end

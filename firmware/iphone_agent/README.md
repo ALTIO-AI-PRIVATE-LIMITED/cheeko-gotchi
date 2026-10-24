@@ -29,7 +29,7 @@ base firmware is wired up.
 
 ## Build and flash
 
-You need git, [arduino-cli](https://arduino.github.io/arduino-cli/), the ESP32
+You need [arduino-cli](https://arduino.github.io/arduino-cli/), the ESP32
 core 3.3.x and two libraries:
 
 ```bash
@@ -40,7 +40,8 @@ arduino-cli lib install "NimBLE-Arduino@2.5.1" "Adafruit GFX Library"
 firmware/iphone_agent/flash.sh            # optional: [serial port] [--debug] [--build-only]
 ```
 
-`flash.sh` fetches the upstream firmware at a pinned commit into `build/`,
+`flash.sh` copies the upstream firmware from
+[`third_party/esp32-iphone-agent`](../../third_party/esp32-iphone-agent/) into `build/`,
 adds the files in `iphone_agent/` (`iphone_agent.ino` is upstream's
 `hid_bridge.ino` with the Cheeko hooks added), builds it and flashes it. Always
 build with `flash.sh`: it applies upstream's BLE buffer sizes (`nimble_cfg.h`).
@@ -49,8 +50,8 @@ If the screen stays dark after flashing, unplug the USB cable and plug it back i
 
 ## Set up the phone
 
-Build and install the iOS app from the upstream repository
-([Quick start, step 2](https://github.com/onehumanbeing/esp32-iphone-agent#2-install-the-app)).
+Build and install the iOS app from [`third_party/esp32-iphone-agent/ios`](../../third_party/esp32-iphone-agent/ios/)
+on a Mac with Xcode ([Quick start, step 2](../../third_party/esp32-iphone-agent/README.md#2-install-the-app)).
 Then plug the Cheeko into the iPhone (USB-C directly, or a Lightning to USB
 Camera Adapter) and follow the app's setup. The Cheeko's screen shows each step
 turning green:
@@ -71,7 +72,7 @@ The files in this directory are MIT, like the rest of this repository.
 notice (see [NOTICE](NOTICE)).
 
 The upstream AirPlay receiver (`hardware/hid_bridge/src/airplay/`, ported from
-UxPlay) is **GPL-3.0**, so it is fetched at build time and not stored here. The
-firmware binary that `flash.sh` builds links it and is therefore GPL-3.0. If you
-distribute that binary, you must also offer its complete source: the upstream
-repository at the pinned commit (`REV` in `flash.sh`) plus this directory.
+UxPlay) is **GPL-3.0**; it is vendored under `third_party/` with its license file.
+The firmware binary that `flash.sh` builds links it and is therefore GPL-3.0. If
+you distribute that binary, you must also offer its complete source:
+`third_party/esp32-iphone-agent` plus this directory.

@@ -1,0 +1,86 @@
+// GOP buffer and BLE video chunker, see gop.h.
+#include "gop.h"
+#include <string.h>
+
+void gop_init(gop_buf *g, uint8_t *arena, size_t cap, gop_au *aus, int max) {
+  memset(g, 0, sizeof *g);
+  g->arena = arena;
+  g->cap = cap;
+  g->aus = aus;
+  g->max = max;
+  g->wait_idr = true;
+}
+
+void gop_set_config(gop_buf *g, const uint8_t *annexb, size_t len, uint32_t ts) {
+  if (len > GOP_CFG_MAX) len = 0;  // never seen in practice; treat as missing
+  memcpy(g->cfg, annexb, len);
+  g->cfg_len = len;
+  g->cfg_ts = ts;
+}
+
+static void restart(gop_buf *g) {
+  g->used = 0;
+  g->n = 0;
+  g->gen++;
+}
+
+int gop_push(gop_buf *g, const uint8_t *annexb, size_t len, bool idr, uint32_t ts) {
+  if (idr) {
+    restart(g);
+    g->wait_idr = false;
+  } else if (g->wait_idr) {
+    return -1;
+  }
+  if (g->used + len > g->cap || g->n == g->max) {  // GOP too big: drop it and wait for the next IDR
+    restart(g);
+    g->wait_idr = true;
+    g->overflows++;
+    return -1;
+  }
+  memcpy(g->arena + g->used, annexb, len);
+  g->aus[g->n] = (gop_au){(uint32_t)g->used, (uint32_t)len, ts, idr};
+  g->used += len;
+  return g->n++;
+}
+
+bool annexb_has_idr(const uint8_t *p, size_t len) {
+  for (size_t i = 0; i + 4 < len; i++)
+    if (p[i] == 0 && p[i + 1] == 0 && p[i + 2] == 1 && (p[i + 3] & 0x1f) == 5) return true;
+  return false;
+}
+
+bool avcc_to_annexb(uint8_t *p, size_t len) {
+  size_t i = 0;
+  while (i + 4 <= len) {
+    uint32_t n = (uint32_t)p[i] << 24 | (uint32_t)p[i + 1] << 16 | (uint32_t)p[i + 2] << 8 | p[i + 3];
+    if (n > len - i - 4) return false;
+    p[i] = p[i + 1] = p[i + 2] = 0;
+    p[i + 3] = 1;
+    i += 4 + n;
+  }
+  return i == len;
+}
+
+void vchunk_begin(vchunk *c, const uint8_t *data, size_t len, uint8_t flags, uint32_t ts) {
+  *c = (vchunk){data, len, 0, ts, (uint8_t)(flags & ~(VF_START | VF_END)), false};
+}
+
+size_t vchunk_next(vchunk *c, uint8_t *out, size_t max_payload, uint16_t seq) {
+  if (max_payload < 5 || (c->started && c->pos >= c->len)) return 0;
+  uint8_t flags = c->flags;
+  size_t o = VCHUNK_HDR, room = max_payload;
+  if (!c->started) {
+    flags |= VF_START;
+    for (int i = 0; i < 4; i++) out[o++] = (uint8_t)(c->ts >> (8 * i));
+    room -= 4;
+    c->started = true;
+  }
+  size_t n = c->len - c->pos < room ? c->len - c->pos : room;
+  memcpy(out + o, c->data + c->pos, n);
+  c->pos += n;
+  if (c->pos >= c->len) flags |= VF_END;
+  out[0] = (uint8_t)seq;
+  out[1] = (uint8_t)(seq >> 8);
+  out[2] = flags;
+  return o + n;
+}

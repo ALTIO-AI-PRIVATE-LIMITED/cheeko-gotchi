@@ -1,0 +1,9 @@
+Config/Local.xcconfig
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+build-sim/
+fastlane/report.xml
+fastlane/README.md
+fastlane/metadata/review_information/
