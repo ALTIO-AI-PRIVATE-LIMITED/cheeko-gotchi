@@ -751,6 +751,46 @@ Running another `upload` or opening the port immediately afterwards fails with
 **Fix:** `sleep 2–5` between operations, and have scripts retry / re-detect the
 port rather than caching it.
 
+### Gotcha 12: `read-flash` needs `--no-stub`, and long reads need chunking
+
+**Symptom:** `esptool read-flash` dies almost immediately with
+
+```
+A fatal error occurred: Serial data stream stopped: Possible serial noise or corruption.
+```
+
+always around offset `0x7000`, and **changing the baud rate does not help** —
+921600 and 460800 both fail in the same place. Easy to misread as a bad cable.
+
+**Cause:** the stub flasher misbehaves on this board's USB-Serial/JTAG
+interface. It is specific to the bulk read path: `flash-id` and `write-flash`
+work fine through the stub.
+
+**Fix:** pass `--no-stub` for reads. It runs at ~720-790 kbit/s, which is no
+slower in practice because USB-JTAG ignores the baud setting anyway.
+
+```bash
+esptool --chip esp32s3 -p "$PORT" --no-stub read-flash 0x0 0x1000000 backup.bin
+```
+
+**Second failure, further along:** a single continuous 16MB read is still
+unreliable — the port can vanish mid-transfer with
+
+```
+could not open port /dev/cu.usbmodem1101: [Errno 2] No such file or directory
+```
+
+and then re-enumerate *under the same name*. That is a transient USB dropout,
+not a brick: if the port came back with its normal name rather than a
+MAC-address-style one, the device did **not** fall into TinyUF2 (contrast
+Gotcha 6). Read in 1MB chunks with per-chunk retries and a wait-for-port loop,
+then `cat` them together — a dropout then costs one chunk instead of the whole
+dump.
+
+**Related:** the hardware test's `merged-binary.bin` is only ~643KB, so writing
+it at `0x0` stops well short of the TinyUF2 bootloader at `0x410000`. Flashing
+the merged image does not cost you the recovery safety net.
+
 ---
 
 ## 10. Suggested project skeleton
@@ -815,6 +855,8 @@ can re-upload assets or query state without rebooting into a special mode.
 | Serial upload truncates | Chunk to 64 bytes with per-chunk ACK (Gotcha 5) |
 | Device unresponsive after a failed upload | Missing timeout in the `PUT` loop |
 | esptool can't connect, odd port name | TinyUF2 recovery; 1200-baud touch (Gotcha 6) |
+| `read-flash` stops at ~`0x7000`, any baud | Stub flasher; use `--no-stub` (Gotcha 12) |
+| Port vanishes mid-read, same name on return | Transient USB dropout; chunk the read (Gotcha 12) |
 | Device randomly powers off | GPIO 2 not held LOW (Gotcha 8) |
 | Accelerometer not found | Probe `0x19`, not `0x18`; check `WHO_AM_I == 0x33` |
 
