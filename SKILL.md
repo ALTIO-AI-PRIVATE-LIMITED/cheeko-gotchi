@@ -1,6 +1,6 @@
 ---
 name: cheeko-gotchi-esp32s3
-description: Build firmware for the Cheeko Gotchi v1.2 ESP32-S3 handheld (240x296 ST7789 LCD, CST810 touch, ES8311 speaker, ES7210 mics, LIS2DH12 accelerometer). Use when writing, flashing, or debugging code for this board, or any ESP32-S3 device with an SPI ST7789-class panel plus an Espressif codec. Covers Arduino toolchain setup, verified pin map, display/touch/audio/tilt bring-up, JPEG rendering, a serial asset-upload protocol, and a long list of hardware gotchas that are expensive to rediscover.
+description: Build firmware for the Cheeko Gotchi v1.2 ESP32-S3 handheld (240x296 ST7789 LCD, CST810 touch, ES8311 speaker, ES7210 mics, LIS2DH12 accelerometer). Use when writing, flashing, or debugging code for this board, or any ESP32-S3 device with an SPI ST7789-class panel plus an Espressif codec. Covers Arduino toolchain setup, display/touch/audio/tilt bring-up, JPEG rendering, a serial asset-upload protocol, and a long list of hardware gotchas that are expensive to rediscover.
 ---
 
 # Cheeko Gotchi v1.2 — ESP32-S3 Handheld Firmware Guide
