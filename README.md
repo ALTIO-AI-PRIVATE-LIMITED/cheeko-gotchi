@@ -48,8 +48,8 @@ and charging. The prebuilt image flashes in one command:
 esptool.py --chip esp32s3 -p PORT -b 460800 write_flash 0x0 cheeko-gotchi-hardware-test_merged.bin
 ```
 
-Then unplug and replug the USB cable to start it. Its README also has the full
-pin map and I²C device list for the board.
+Then unplug and replug the USB cable to start it. Its README also has the I²C
+device list for the board.
 
 ## Examples
 
@@ -82,7 +82,7 @@ start from.
 | `schemas/` | Machine-readable app package contract |
 | `cloud/` | Cloud builder API contract and a runnable local service |
 | `demo/` | Local end-to-end loop: pairing, generation, OTA, install report |
-| `firmware/hardware_test/` | Hardware test firmware: checks every part of the device, documents the pin map |
+| `firmware/hardware_test/` | Hardware test firmware: checks every part of the device |
 | `firmware/cheekoai_base/` | Base firmware/runtime scaffold (hardware adapters not connected yet) |
 | `tools/cheeko` | Local CLI helper |
 

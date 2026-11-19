@@ -53,49 +53,10 @@ I²S master; both codecs are slaves).
 
 ---
 
-## 2. Verified pin map
+## 2. Pin definitions
 
-These values are cross-checked against three independent working sketches and
-confirmed by running code. [`firmware/hardware_test`](firmware/hardware_test/)
-uses the same pin map.
-
-```cpp
-// ---- Display (SPI) ----
-static constexpr int PIN_LCD_DC    = 8;   // data/command select
-static constexpr int PIN_LCD_SCLK  = 9;
-static constexpr int PIN_LCD_MOSI  = 10;
-static constexpr int PIN_LCD_BL    = 13;  // backlight enable (HIGH = on)
-static constexpr int PIN_LCD_CS    = 14;
-static constexpr int PIN_LCD_RST   = 17;
-// NOTE: there is no MISO. SPI.begin(SCLK, -1, MOSI, CS).
-
-// ---- I2C bus (touch + both codecs + accelerometer) ----
-static constexpr int PIN_I2C_SCL   = 11;
-static constexpr int PIN_I2C_SDA   = 12;
-static constexpr int PIN_TOUCH_IRQ = 1;   // CST810 interrupt (optional; polling works)
-
-// ---- I2S audio ----
-static constexpr int PIN_PA_CTRL   = 4;   // speaker amp enable (HIGH = on)
-static constexpr int PIN_I2S_MCLK  = 5;
-static constexpr int PIN_I2S_DOUT  = 6;   // ESP32 -> ES8311 (playback)
-static constexpr int PIN_I2S_DIN   = 7;   // ES7210 -> ESP32 (capture)
-static constexpr int PIN_I2S_BCLK  = 15;
-static constexpr int PIN_I2S_LRCK  = 16;  // aka WS
-
-// ---- Buttons / power ----
-static constexpr int PIN_BOOT_BUTTON  = 0;   // active LOW (often not exposed on the case!)
-static constexpr int PIN_POWER_OFF    = 2;   // OUTPUT: drive HIGH to cut power (see Gotcha 8)
-static constexpr int PIN_POWER_KEY    = 3;   // middle button, active HIGH + external pulldown
-static constexpr int PIN_CHARGE_DET   = 37;  // charge detect
-static constexpr int PIN_VOLUME_DOWN  = 39;  // active LOW
-static constexpr int PIN_VOLUME_UP    = 40;  // active LOW
-
-// ---- I2C addresses ----
-static constexpr uint8_t CST810_ADDR   = 0x15;  // touch
-static constexpr uint8_t ES8311_ADDR   = 0x18;  // speaker codec
-static constexpr uint8_t LIS2DH12_ADDR = 0x19;  // accelerometer
-static constexpr uint8_t ES7210_ADDR   = 0x40;  // mic ADC
-```
+The pin and I²C address constants used in this guide are defined in the working
+reference firmware: [`firmware/hardware_test/main/cheeko_self_test.c`](firmware/hardware_test/main/cheeko_self_test.c).
 
 Bus speeds that work reliably: `Wire.begin(SDA, SCL, 400000)` (400kHz I²C) and
 `SPI.setFrequency(40000000)` (40MHz SPI).

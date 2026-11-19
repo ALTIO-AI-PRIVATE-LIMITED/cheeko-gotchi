@@ -79,22 +79,6 @@ For serial logs, power-cycle the board first and then run
 | PSRAM | 8 MB, octal (not used by this test) |
 | USB | Native USB-Serial/JTAG (no separate USB-UART chip) |
 
-### Pin map
-
-| Function | GPIO | Function | GPIO |
-| --- | --- | --- | --- |
-| LCD SCLK | 9 | I²C SCL | 11 |
-| LCD MOSI | 10 | I²C SDA | 12 |
-| LCD CS | 14 | Touch IRQ | 1 |
-| LCD DC | 8 | I²S MCLK | 5 |
-| LCD reset | 17 | I²S BCLK | 15 |
-| LCD backlight | 13 | I²S LRCK (WS) | 16 |
-| Speaker amp enable | 4 | I²S DOUT → ES8311 (speaker) | 6 |
-| Boot button | 0 | I²S DIN ← ES7210 (mics) | 7 |
-| Power key | 3 | Volume − | 39 |
-| Power-off latch | 2 | Volume + | 40 |
-| Charge detect | 37 | | |
-
 ### I²C devices
 
 | Address | Device |
